@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>{% block title %}Viral Video Processor{% endblock %}</title>
     
     <!-- Fonts -->
@@ -24,27 +29,33 @@
                 <img src="{{ url_for('static', filename='images/5DLogo.gif') }}" alt="5D Media Logo" class="brand-logo">
                 <span>Viral Video Processor</span>
             </div>
-            <ul class="nav-menu">
+            
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-toggle" onclick="toggleMobileMenu()" aria-label="Toggle menu">
+                <i class="fas fa-bars" id="menu-icon"></i>
+            </button>
+            
+            <ul class="nav-menu" id="nav-menu">
                 <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
-                    <i class="fas fa-home"></i> Dashboard
+                    <i class="fas fa-home"></i> <span>Dashboard</span>
                 </a></li>
                 <li><a href="{{ url_for('search_page') }}" class="nav-link {% if request.endpoint == 'search_page' %}active{% endif %}">
-                    <i class="fas fa-search"></i> Search
+                    <i class="fas fa-search"></i> <span>Search</span>
                 </a></li>
                 <li><a href="{{ url_for('download_page') }}" class="nav-link {% if request.endpoint == 'download_page' %}active{% endif %}">
-                    <i class="fas fa-download"></i> Download
+                    <i class="fas fa-download"></i> <span>Download</span>
                 </a></li>
                 <li><a href="{{ url_for('videos_page') }}" class="nav-link {% if request.endpoint == 'videos_page' %}active{% endif %}">
-                    <i class="fas fa-video"></i> Videos
+                    <i class="fas fa-video"></i> <span>Videos</span>
                 </a></li>
                 <li><a href="{{ url_for('analyze_page') }}" class="nav-link {% if request.endpoint == 'analyze_page' %}active{% endif %}">
-                    <i class="fas fa-chart-line"></i> Analyze
+                    <i class="fas fa-chart-line"></i> <span>Analyze</span>
                 </a></li>
                 <li><a href="{{ url_for('results_page') }}" class="nav-link {% if request.endpoint == 'results_page' %}active{% endif %}">
-                    <i class="fas fa-chart-bar"></i> Results
+                    <i class="fas fa-chart-bar"></i> <span>Results</span>
                 </a></li>
                 <li><a href="{{ url_for('clips_page') }}" class="nav-link {% if request.endpoint == 'clips_page' %}active{% endif %}">
-                    <i class="fas fa-cut"></i> Clips
+                    <i class="fas fa-cut"></i> <span>Clips</span>
                 </a></li>
             </ul>
         </div>
@@ -68,6 +79,49 @@
 
     <!-- Scripts -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <!-- Mobile Menu Script -->
+    <script>
+        function toggleMobileMenu() {
+            const navMenu = document.getElementById('nav-menu');
+            const menuIcon = document.getElementById('menu-icon');
+            
+            navMenu.classList.toggle('mobile-open');
+            
+            if (navMenu.classList.contains('mobile-open')) {
+                menuIcon.classList.remove('fa-bars');
+                menuIcon.classList.add('fa-times');
+            } else {
+                menuIcon.classList.remove('fa-times');
+                menuIcon.classList.add('fa-bars');
+            }
+        }
+        
+        // Close menu when clicking a link
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                const navMenu = document.getElementById('nav-menu');
+                const menuIcon = document.getElementById('menu-icon');
+                navMenu.classList.remove('mobile-open');
+                menuIcon.classList.remove('fa-times');
+                menuIcon.classList.add('fa-bars');
+            });
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            const navMenu = document.getElementById('nav-menu');
+            const toggle = document.querySelector('.mobile-menu-toggle');
+            
+            if (!navMenu.contains(e.target) && !toggle.contains(e.target)) {
+                navMenu.classList.remove('mobile-open');
+                const menuIcon = document.getElementById('menu-icon');
+                menuIcon.classList.remove('fa-times');
+                menuIcon.classList.add('fa-bars');
+            }
+        });
+    </script>
+    
     {% block extra_js %}{% endblock %}
 </body>
 </html>

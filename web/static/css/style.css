@@ -93,6 +93,24 @@ body {
     gap: 1rem;
 }
 
+/* Mobile Menu Toggle */
+.mobile-menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    transition: var(--transition);
+}
+
+.mobile-menu-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--primary-color);
+}
+
 .nav-link {
     display: flex;
     align-items: center;
@@ -1352,10 +1370,15 @@ body {
     }
 }
 
-/* Responsive */
+/* ========================================
+   RESPONSIVE DESIGN - Mobile First Approach
+   ======================================== */
+
+/* Tablet (1024px and below) */
 @media (max-width: 1024px) {
     .content-grid {
         grid-template-columns: 1fr;
+        gap: 1rem;
     }
 
     .sidebar-panel {
@@ -1365,40 +1388,547 @@ body {
     .video-preview-grid {
         grid-template-columns: 1fr;
     }
+    
+    .nav-container {
+        padding: 0 1.5rem;
+    }
+    
+    .nav-brand span {
+        font-size: 1.1rem;
+    }
 }
 
+/* Mobile Large (768px and below) */
 @media (max-width: 768px) {
+    /* Navigation - Mobile Hamburger Menu */
+    .navbar {
+        padding: 0.75rem 0;
+    }
+    
     .nav-container {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
         padding: 0 1rem;
+        position: relative;
+    }
+    
+    .nav-brand {
+        justify-content: flex-start;
+    }
+    
+    .nav-brand span {
+        font-size: 1rem;
+    }
+    
+    .nav-brand .brand-logo {
+        height: 32px;
+    }
+    
+    /* Show hamburger menu */
+    .mobile-menu-toggle {
+        display: block;
+        z-index: 1001;
     }
 
+    /* Mobile Menu - Slide Down */
     .nav-menu {
-        flex-wrap: wrap;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border-color);
+        padding: 0;
+        gap: 0;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+        box-shadow: var(--shadow-lg);
+    }
+    
+    .nav-menu.mobile-open {
+        max-height: 500px;
+        padding: 0.5rem 0;
+    }
+    
+    .nav-menu li {
+        width: 100%;
     }
 
+    .nav-link {
+        padding: 1rem 1.5rem;
+        font-size: 1rem;
+        white-space: nowrap;
+        border-radius: 0;
+        border-bottom: 1px solid var(--border-color);
+        justify-content: flex-start;
+    }
+    
+    .nav-menu li:last-child .nav-link {
+        border-bottom: none;
+    }
+    
+    .nav-link i {
+        font-size: 1.1rem;
+        width: 24px;
+    }
+    
+    .nav-link.active {
+        background: rgba(14, 165, 233, 0.1);
+        border-left: 3px solid var(--primary-color);
+    }
+
+    /* Main Content */
     .main-content {
         padding: 1rem;
     }
-
-    .hero-title {
-        font-size: 2rem;
+    
+    .page-container {
+        padding: 1rem;
     }
 
-    .quick-actions {
-        grid-template-columns: 1fr;
+    /* Page Header */
+    .page-header {
+        text-align: center;
+        margin-bottom: 1.5rem;
     }
-
+    
     .page-header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .page-header p {
+        font-size: 0.875rem;
+    }
+
+    /* Hero Section */
+    .hero-title {
         font-size: 1.75rem;
     }
+    
+    .hero-subtitle {
+        font-size: 0.9rem;
+    }
 
+    /* Cards */
+    .card {
+        border-radius: 0.75rem;
+    }
+    
+    .card-header {
+        padding: 0.875rem 1rem;
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: flex-start;
+    }
+    
+    .card-header h3 {
+        font-size: 1rem;
+    }
+    
+    .card-actions {
+        width: 100%;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    
+    .action-card {
+        padding: 1rem;
+    }
+
+    /* Forms */
+    .form-input, .form-select {
+        padding: 0.75rem;
+        font-size: 16px; /* Prevents iOS zoom on focus */
+    }
+    
+    .form-group label {
+        font-size: 0.875rem;
+    }
+
+    /* Buttons */
+    .btn {
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .button-group {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .button-group .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    
+    .stat-card {
+        padding: 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.25rem;
+    }
+
+    /* Summary Grid */
+    .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    
+    .summary-item {
+        padding: 0.75rem;
+    }
+    
+    .summary-value {
+        font-size: 1.25rem;
+    }
+
+    /* Clips */
+    .clips-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .clip-card {
+        padding: 1rem;
+    }
+
+    /* Video Preview */
+    .video-thumbnail {
+        width: 100%;
+        min-width: unset;
+    }
+
+    /* Export Options */
+    .export-options {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .export-options select {
+        width: 100%;
+    }
+    
+    .export-options .btn {
+        width: 100%;
+    }
+    
+    .export-all-controls {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .export-all-controls select,
+    .export-all-controls .btn {
+        width: 100%;
+    }
+
+    /* Search Page */
+    .search-input-group {
+        flex-direction: column;
+    }
+    
+    .search-input {
+        font-size: 16px;
+    }
+    
+    .search-btn {
+        width: 100%;
+    }
+    
+    .platform-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+    
+    .platform-btn {
+        justify-content: center;
+        padding: 0.75rem;
+    }
+    
+    .content-type-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+    }
+    
+    .type-btn {
+        justify-content: center;
+        padding: 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    .video-result-card {
+        flex-direction: column;
+    }
+    
+    .video-thumbnail {
+        width: 100%;
+    }
+
+    /* Duration Settings */
+    .duration-presets {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+    
+    .preset-btn {
+        min-width: unset;
+        padding: 0.5rem;
+    }
+    
+    .preset-range {
+        font-size: 0.8rem;
+    }
+    
+    .preset-label {
+        font-size: 0.7rem;
+    }
+    
+    .custom-duration {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .duration-input-group {
+        width: 100%;
+    }
+    
+    .duration-select {
+        flex: 1;
+    }
+
+    /* Toast Notifications */
     #toast-container {
-        right: 1rem;
-        left: 1rem;
+        right: 0.5rem;
+        left: 0.5rem;
+        top: auto;
+        bottom: 1rem;
     }
 
     .toast {
         min-width: 0;
+        font-size: 0.875rem;
+    }
+
+    /* Videos Library */
+    .videos-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .video-card {
+        padding: 0.75rem;
+    }
+    
+    .library-actions {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .action-buttons {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    /* Analysis Steps */
+    .analysis-steps {
+        gap: 1rem;
+    }
+    
+    .step-item {
+        padding: 0.75rem;
+    }
+
+    /* Info Steps */
+    .info-steps {
+        gap: 0.75rem;
+    }
+    
+    .info-step {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.5rem;
+    }
+
+    /* Progress Bars */
+    .progress-info {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.25rem;
+    }
+
+    /* Player Controls */
+    .player-controls {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .player-controls .btn {
+        flex: 1;
+        min-width: calc(50% - 0.25rem);
+    }
+}
+
+/* Mobile Small (480px and below) */
+@media (max-width: 480px) {
+    /* Even smaller adjustments */
+    .nav-brand span {
+        font-size: 0.9rem;
+    }
+    
+    .nav-brand .brand-logo {
+        height: 28px;
+    }
+    
+    .page-header h1 {
+        font-size: 1.25rem;
+    }
+    
+    .hero-title {
+        font-size: 1.5rem;
+    }
+    
+    .card-header h3 {
+        font-size: 0.9rem;
+    }
+    
+    /* Stats - Single Column */
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Platform Buttons - Single Column */
+    .platform-buttons {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Duration Presets - Scrollable */
+    .duration-presets {
+        grid-template-columns: repeat(3, 1fr);
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+    
+    /* Quick Searches - Smaller */
+    .quick-search-btn {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Clip Actions - Stack */
+    .clip-actions {
+        flex-direction: column;
+    }
+    
+    .clip-actions .btn {
+        width: 100%;
+    }
+}
+
+/* Touch Device Optimizations */
+@media (hover: none) and (pointer: coarse) {
+    /* Larger touch targets */
+    .btn {
+        min-height: 44px;
+    }
+    
+    .nav-link {
+        min-height: 40px;
+    }
+    
+    .platform-btn, .type-btn, .preset-btn {
+        min-height: 44px;
+    }
+    
+    .quick-search-btn {
+        min-height: 36px;
+    }
+    
+    /* Remove hover effects that can be sticky on touch */
+    .card:hover {
+        transform: none;
+    }
+    
+    .action-card:hover {
+        transform: none;
+    }
+    
+    .video-result-card:hover {
+        transform: none;
+    }
+}
+
+/* Landscape Mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+    .page-header {
+        margin-bottom: 1rem;
+    }
+    
+    .hero-section {
+        padding: 1rem;
+    }
+    
+    .content-grid {
+        gap: 0.75rem;
+    }
+}
+
+/* High DPI / Retina displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .nav-brand .brand-logo {
+        image-rendering: -webkit-optimize-contrast;
+    }
+}
+
+/* Safe Area for notched devices (iPhone X+) */
+@supports (padding: max(0px)) {
+    .navbar {
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+    }
+    
+    .main-content, .page-container {
+        padding-left: max(1rem, env(safe-area-inset-left));
+        padding-right: max(1rem, env(safe-area-inset-right));
+        padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+}
+
+/* Dark mode preference (already dark, but ensures consistency) */
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+    }
+}
+
+/* Reduced Motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
     }
 }
 

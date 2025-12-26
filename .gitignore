@@ -1,0 +1,33 @@
+# Environment
+.env
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Downloads and outputs
+downloads/
+videos/
+clips/
+*.mp4
+*.webm
+*.mkv
+*.avi
+
+# Transcripts and analysis
+*.json
+*.srt
+*.vtt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

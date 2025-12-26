@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}Results - Viral Video Processor{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-film"></i>
+            Analysis Results
+        </h1>
+        <p>View and export your viral clip candidates</p>
+    </div>
+
+    <div id="results-container" class="content-grid">
+        <!-- Loading State -->
+        <div id="loading-state" class="full-width">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 3rem; color: #6366f1; margin-bottom: 1rem;"></i>
+                    <p>Loading results...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="full-width" style="display: none;">
+            <div class="card">
+                <div class="card-body text-center">
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <h3>No Results Yet</h3>
+                        <p>Analyze a video to see viral clip candidates here</p>
+                        <a href="{{ url_for('analyze_page') }}" class="btn btn-primary">
+                            <i class="fas fa-chart-line"></i> Analyze Video
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Content -->
+        <div id="results-content" class="main-panel" style="display: none;">
+            <!-- Summary Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-info-circle"></i> Analysis Summary</h3>
+                </div>
+                <div class="card-body">
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <i class="fas fa-film"></i>
+                            <div>
+                                <div class="summary-value" id="total-clips">0</div>
+                                <div class="summary-label">Total Clips</div>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <i class="fas fa-star"></i>
+                            <div>
+                                <div class="summary-value" id="avg-score">0.0</div>
+                                <div class="summary-label">Avg Score</div>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <i class="fas fa-clock"></i>
+                            <div>
+                                <div class="summary-value" id="total-duration">0s</div>
+                                <div class="summary-label">Total Duration</div>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <i class="fas fa-wave-square"></i>
+                            <div>
+                                <div class="summary-value" id="audio-spikes">0</div>
+                                <div class="summary-label">Audio Spikes</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Clips List -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-trophy"></i> Top Viral Clips</h3>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="exportResults()">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="clips-list" class="clips-list">
+                        <!-- Clips will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transcript -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-closed-captioning"></i> Full Transcript</h3>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleTranscript()">
+                        <i class="fas fa-eye"></i> <span id="transcript-toggle-text">Show</span>
+                    </button>
+                </div>
+                <div class="card-body" id="transcript-body" style="display: none;">
+                    <div id="transcript-text" class="transcript-text">
+                        <!-- Transcript will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div id="results-sidebar" class="sidebar-panel" style="display: none;">
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="exportResults()">
+                            <i class="fas fa-file-export"></i>
+                            <span>Export Results</span>
+                        </button>
+                        <button class="action-btn" onclick="window.location.href='{{ url_for('analyze_page') }}'">
+                            <i class="fas fa-redo"></i>
+                            <span>New Analysis</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Score Distribution -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-bar"></i> Score Distribution</h3>
+                </div>
+                <div class="card-body">
+                    <div id="score-distribution" class="score-distribution">
+                        <!-- Distribution bars will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-key"></i> Score Guide</h3>
+                </div>
+                <div class="card-body">
+                    <div class="score-guide">
+                        <div class="guide-item">
+                            <div class="score-badge high">9.0+</div>
+                            <span>Excellent - Very high viral potential</span>
+                        </div>
+                        <div class="guide-item">
+                            <div class="score-badge good">7.0-8.9</div>
+                            <span>Good - Strong engagement</span>
+                        </div>
+                        <div class="guide-item">
+                            <div class="score-badge medium">5.0-6.9</div>
+                            <span>Medium - Moderate potential</span>
+                        </div>
+                        <div class="guide-item">
+                            <div class="score-badge low">&lt;5.0</div>
+                            <span>Low - Limited engagement</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentResults = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const taskId = localStorage.getItem('taskId');
+        if (taskId) {
+            loadResults(taskId);
+            localStorage.removeItem('taskId');
+        } else {
+            showEmptyState();
+        }
+    });
+
+    async function loadResults(taskId) {
+        try {
+            const response = await fetch(`/api/results/${taskId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                currentResults = data.results;
+                displayResults(data.results);
+            } else {
+                showEmptyState();
+            }
+        } catch (error) {
+            console.error('Error loading results:', error);
+            showEmptyState();
+        }
+    }
+
+    function displayResults(results) {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('results-content').style.display = 'block';
+        document.getElementById('results-sidebar').style.display = 'block';
+
+        // Display summary
+        const clips = results.clips || [];
+        const audioSpikes = results.audio_spikes || [];
+        
+        document.getElementById('total-clips').textContent = clips.length;
+        document.getElementById('audio-spikes').textContent = audioSpikes.length;
+        
+        if (clips.length > 0) {
+            const avgScore = clips.reduce((sum, clip) => sum + clip.score, 0) / clips.length;
+            document.getElementById('avg-score').textContent = avgScore.toFixed(1);
+            
+            const totalDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
+            document.getElementById('total-duration').textContent = Math.round(totalDuration) + 's';
+        }
+
+        // Display clips
+        displayClips(clips);
+
+        // Display transcript
+        document.getElementById('transcript-text').textContent = results.transcript || 'No transcript available';
+
+        // Display score distribution
+        displayScoreDistribution(clips);
+    }
+
+    function displayClips(clips) {
+        const container = document.getElementById('clips-list');
+        
+        if (clips.length === 0) {
+            container.innerHTML = '<p class="text-center">No clips found</p>';
+            return;
+        }
+
+        container.innerHTML = clips.map((clip, index) => `
+            <div class="clip-card">
+                <div class="clip-header">
+                    <div class="clip-rank">#${index + 1}</div>
+                    <div class="clip-score ${getScoreClass(clip.score)}">
+                        <i class="fas fa-star"></i> ${clip.score.toFixed(1)}
+                    </div>
+                </div>
+                <div class="clip-body">
+                    <div class="clip-time">
+                        <i class="fas fa-clock"></i>
+                        ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}
+                        <span class="clip-duration">(${clip.duration}s)</span>
+                    </div>
+                    <div class="clip-text">${clip.text}</div>
+                    <div class="clip-criteria">
+                        <div class="criterion">
+                            <span class="criterion-label">
+                                <i class="fas fa-hook"></i> Hook
+                            </span>
+                            <div class="criterion-bar">
+                                <div class="criterion-fill" style="width: ${clip.hook * 10}%"></div>
+                            </div>
+                            <span class="criterion-value">${clip.hook.toFixed(1)}</span>
+                        </div>
+                        <div class="criterion">
+                            <span class="criterion-label">
+                                <i class="fas fa-heart"></i> Emotion
+                            </span>
+                            <div class="criterion-bar">
+                                <div class="criterion-fill" style="width: ${clip.emotional_impact * 10}%"></div>
+                            </div>
+                            <span class="criterion-value">${clip.emotional_impact.toFixed(1)}</span>
+                        </div>
+                        <div class="criterion">
+                            <span class="criterion-label">
+                                <i class="fas fa-info-circle"></i> Info
+                            </span>
+                            <div class="criterion-bar">
+                                <div class="criterion-fill" style="width: ${clip.information_density * 10}%"></div>
+                            </div>
+                            <span class="criterion-value">${clip.information_density.toFixed(1)}</span>
+                        </div>
+                        <div class="criterion">
+                            <span class="criterion-label">
+                                <i class="fas fa-gauge-high"></i> Pacing
+                            </span>
+                            <div class="criterion-bar">
+                                <div class="criterion-fill" style="width: ${clip.pacing * 10}%"></div>
+                            </div>
+                            <span class="criterion-value">${clip.pacing.toFixed(1)}</span>
+                        </div>
+                    </div>
+                    ${clip.reasoning ? `<div class="clip-reasoning"><strong>Analysis:</strong> ${clip.reasoning}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function displayScoreDistribution(clips) {
+        const container = document.getElementById('score-distribution');
+        
+        const ranges = {
+            'Excellent (9+)': clips.filter(c => c.score >= 9).length,
+            'Good (7-8.9)': clips.filter(c => c.score >= 7 && c.score < 9).length,
+            'Medium (5-6.9)': clips.filter(c => c.score >= 5 && c.score < 7).length,
+            'Low (<5)': clips.filter(c => c.score < 5).length
+        };
+
+        const maxCount = Math.max(...Object.values(ranges));
+
+        container.innerHTML = Object.entries(ranges).map(([label, count]) => `
+            <div class="dist-item">
+                <div class="dist-label">${label}</div>
+                <div class="dist-bar">
+                    <div class="dist-fill" style="width: ${maxCount > 0 ? (count / maxCount * 100) : 0}%"></div>
+                </div>
+                <div class="dist-count">${count}</div>
+            </div>
+        `).join('');
+    }
+
+    function showEmptyState() {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('empty-state').style.display = 'block';
+        document.getElementById('results-content').style.display = 'none';
+        document.getElementById('results-sidebar').style.display = 'none';
+    }
+
+    function getScoreClass(score) {
+        if (score >= 9) return 'high';
+        if (score >= 7) return 'good';
+        if (score >= 5) return 'medium';
+        return 'low';
+    }
+
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function toggleTranscript() {
+        const body = document.getElementById('transcript-body');
+        const text = document.getElementById('transcript-toggle-text');
+        
+        if (body.style.display === 'none') {
+            body.style.display = 'block';
+            text.textContent = 'Hide';
+        } else {
+            body.style.display = 'none';
+            text.textContent = 'Show';
+        }
+    }
+
+    function exportResults() {
+        if (!currentResults) {
+            showToast('No results to export', 'error');
+            return;
+        }
+
+        const dataStr = JSON.stringify(currentResults, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `analysis-results-${Date.now()}.json`;
+        link.click();
+        
+        showToast('Results exported successfully', 'success');
+    }
+</script>
+{% endblock %}

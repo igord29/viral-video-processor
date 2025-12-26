@@ -765,6 +765,163 @@ def list_clips():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/export-all-clips', methods=['POST'])
+def export_all_clips():
+    """Export all clips from an analysis at once."""
+    try:
+        data = request.get_json()
+        task_id = data.get('task_id')
+        aspect_ratio = data.get('aspect_ratio', 'original')
+        resize_mode = data.get('resize_mode', 'fit')
+        
+        # Get analysis results
+        results = analysis_results.get(task_id)
+        if not results:
+            return jsonify({'error': 'Analysis results not found'}), 404
+        
+        video_path = results.get('video_path')
+        clips_data = results.get('clips', [])
+        
+        if not clips_data:
+            return jsonify({'error': 'No clips found in analysis'}), 400
+        
+        # Import moviepy
+        try:
+            from moviepy.editor import VideoFileClip
+        except ImportError:
+            from moviepy import VideoFileClip
+        
+        # Ensure clips directory exists
+        Config.CLIPS_PATH.mkdir(parents=True, exist_ok=True)
+        
+        generated_clips = []
+        errors = []
+        
+        # Load video once
+        video = VideoFileClip(video_path)
+        
+        for i, clip_data in enumerate(clips_data):
+            try:
+                start_time = clip_data.get('start_time', 0)
+                end_time = clip_data.get('end_time', start_time + 30)
+                
+                # Generate filename
+                source_name = Path(video_path).stem
+                safe_name = Config.get_safe_filename(source_name)[:30]
+                
+                parts = [safe_name, f"clip{i+1}"]
+                if aspect_ratio != 'original':
+                    parts.append(aspect_ratio.replace(':', 'x'))
+                    parts.append(resize_mode)
+                parts.append(f"{int(end_time - start_time)}s")
+                
+                output_filename = "_".join(parts) + ".mp4"
+                output_path = Config.CLIPS_PATH / output_filename
+                
+                # Skip if already exists
+                if output_path.exists():
+                    generated_clips.append({
+                        'index': i + 1,
+                        'filename': output_filename,
+                        'status': 'skipped (exists)'
+                    })
+                    continue
+                
+                # Extract clip
+                end_t = min(end_time, video.duration)
+                if hasattr(video, 'subclipped'):
+                    clip = video.subclipped(start_time, end_t)
+                else:
+                    clip = video.subclip(start_time, end_t)
+                
+                # Apply aspect ratio if needed
+                if aspect_ratio != 'original':
+                    clip = apply_aspect_ratio(clip, aspect_ratio, mode=resize_mode)
+                
+                # Write clip
+                clip.write_videofile(
+                    str(output_path),
+                    codec='libx264',
+                    audio_codec='aac',
+                    logger=None
+                )
+                
+                try:
+                    clip.close()
+                except:
+                    pass
+                
+                generated_clips.append({
+                    'index': i + 1,
+                    'filename': output_filename,
+                    'status': 'success'
+                })
+                
+            except Exception as e:
+                errors.append({
+                    'index': i + 1,
+                    'error': str(e)
+                })
+        
+        # Close video
+        try:
+            video.close()
+        except:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'Generated {len(generated_clips)} clips',
+            'clips': generated_clips,
+            'errors': errors
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error exporting all clips: {str(e)}")
+        try:
+            print(traceback.format_exc())
+        except:
+            pass
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clip/<filename>')
+def serve_clip(filename):
+    """Serve a clip file for preview."""
+    try:
+        clip_path = Config.CLIPS_PATH / filename
+        if not clip_path.exists():
+            return jsonify({'error': 'Clip not found'}), 404
+        
+        return send_file(
+            clip_path,
+            mimetype='video/mp4',
+            as_attachment=False
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/delete-clip/<filename>', methods=['DELETE'])
+def delete_clip(filename):
+    """Delete a clip file."""
+    try:
+        clip_path = Config.CLIPS_PATH / filename
+        if clip_path.exists():
+            clip_path.unlink()
+            return jsonify({'success': True, 'message': 'Clip deleted'})
+        return jsonify({'error': 'Clip not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/clips')
+def clips_page():
+    """Clips library page."""
+    return render_template('clips.html')
+
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("Viral Video Processor - Web Interface")

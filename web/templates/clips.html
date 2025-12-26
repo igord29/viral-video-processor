@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+
+{% block title %}Clips Library - Viral Video Processor{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-cut"></i>
+            Clips Library
+        </h1>
+        <p>Browse and manage your exported viral clips</p>
+    </div>
+
+    <div class="content-grid">
+        <div class="main-panel full-width">
+            <!-- Actions Bar -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="library-actions">
+                        <div class="action-buttons">
+                            <button class="btn btn-secondary" onclick="loadClips()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button class="btn btn-secondary" onclick="openClipsFolder()">
+                                <i class="fas fa-folder-open"></i> Open Folder
+                            </button>
+                        </div>
+                        <div class="clip-stats">
+                            <span id="clip-count">0 clips</span>
+                            <span id="total-size">0 MB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Clips Grid -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-film"></i> Generated Clips</h3>
+                </div>
+                <div class="card-body">
+                    <div id="clips-grid" class="clips-grid">
+                        <div class="loading-placeholder">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Loading clips...</p>
+                        </div>
+                    </div>
+                    
+                    <div id="no-clips" class="empty-state" style="display: none;">
+                        <i class="fas fa-cut"></i>
+                        <h3>No Clips Yet</h3>
+                        <p>Export clips from your analyzed videos to see them here.</p>
+                        <a href="{{ url_for('results_page') }}" class="btn btn-primary">
+                            <i class="fas fa-chart-line"></i> Go to Results
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.full-width {
+    grid-column: 1 / -1;
+}
+
+.library-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.clip-stats {
+    display: flex;
+    gap: 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.clip-stats span {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.clips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+.clip-card {
+    background: var(--bg-secondary);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+}
+
+.clip-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.clip-preview {
+    position: relative;
+    aspect-ratio: 16/9;
+    background: #000;
+}
+
+.clip-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.clip-preview-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 0.2s;
+    cursor: pointer;
+}
+
+.clip-card:hover .clip-preview-overlay {
+    opacity: 1;
+}
+
+.clip-preview-overlay i {
+    font-size: 3rem;
+    color: white;
+}
+
+.clip-info {
+    padding: 1rem;
+}
+
+.clip-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    word-break: break-word;
+}
+
+.clip-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.clip-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.clip-actions .btn {
+    flex: 1;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-muted);
+}
+
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.3;
+}
+
+.empty-state h3 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.loading-placeholder {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-muted);
+}
+
+.loading-placeholder i {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+/* Badge for aspect ratio */
+.aspect-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        loadClips();
+    });
+
+    async function loadClips() {
+        try {
+            const response = await fetch('/api/clips');
+            const data = await response.json();
+            
+            const grid = document.getElementById('clips-grid');
+            const noClips = document.getElementById('no-clips');
+            
+            if (!data.clips || data.clips.length === 0) {
+                grid.style.display = 'none';
+                noClips.style.display = 'block';
+                updateStats(0, 0);
+                return;
+            }
+            
+            grid.style.display = 'grid';
+            noClips.style.display = 'none';
+            
+            // Calculate total size
+            const totalSize = data.clips.reduce((sum, clip) => sum + clip.size, 0);
+            updateStats(data.clips.length, totalSize);
+            
+            // Render clips
+            grid.innerHTML = data.clips.map(clip => createClipCard(clip)).join('');
+            
+        } catch (error) {
+            console.error('Error loading clips:', error);
+            showToast('Failed to load clips', 'error');
+        }
+    }
+
+    function createClipCard(clip) {
+        const sizeStr = formatFileSize(clip.size);
+        const dateStr = new Date(clip.modified * 1000).toLocaleDateString();
+        
+        // Extract aspect ratio from filename if present
+        let aspectBadge = '';
+        if (clip.name.includes('9x16')) {
+            aspectBadge = '<span class="aspect-badge">9:16</span>';
+        } else if (clip.name.includes('1x1')) {
+            aspectBadge = '<span class="aspect-badge">1:1</span>';
+        } else if (clip.name.includes('4x5')) {
+            aspectBadge = '<span class="aspect-badge">4:5</span>';
+        } else if (clip.name.includes('4x3')) {
+            aspectBadge = '<span class="aspect-badge">4:3</span>';
+        }
+        
+        return `
+            <div class="clip-card">
+                <div class="clip-preview">
+                    <video preload="metadata" onclick="this.paused ? this.play() : this.pause()">
+                        <source src="/api/clip/${encodeURIComponent(clip.name)}" type="video/mp4">
+                    </video>
+                    ${aspectBadge}
+                    <div class="clip-preview-overlay" onclick="playClipVideo(this)">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                </div>
+                <div class="clip-info">
+                    <div class="clip-name" title="${clip.name}">${clip.name}</div>
+                    <div class="clip-meta">
+                        <span><i class="fas fa-hdd"></i> ${sizeStr}</span>
+                        <span><i class="fas fa-calendar"></i> ${dateStr}</span>
+                    </div>
+                    <div class="clip-actions">
+                        <button class="btn btn-sm btn-primary" onclick="downloadClip('${clip.name}')">
+                            <i class="fas fa-download"></i> Download
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteClip('${clip.name}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function playClipVideo(overlay) {
+        const video = overlay.parentElement.querySelector('video');
+        overlay.style.display = 'none';
+        video.play();
+        
+        video.onended = () => {
+            overlay.style.display = 'flex';
+        };
+        
+        video.onpause = () => {
+            if (video.currentTime < video.duration - 0.5) {
+                overlay.style.display = 'flex';
+            }
+        };
+    }
+
+    function updateStats(count, totalBytes) {
+        document.getElementById('clip-count').innerHTML = `<i class="fas fa-film"></i> ${count} clips`;
+        document.getElementById('total-size').innerHTML = `<i class="fas fa-hdd"></i> ${formatFileSize(totalBytes)}`;
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function downloadClip(filename) {
+        const link = document.createElement('a');
+        link.href = `/api/clip/${encodeURIComponent(filename)}`;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Download started', 'success');
+    }
+
+    async function deleteClip(filename) {
+        if (!confirm(`Delete clip "${filename}"?`)) return;
+        
+        try {
+            const response = await fetch(`/api/delete-clip/${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('Clip deleted', 'success');
+                loadClips();
+            } else {
+                showToast(data.error || 'Failed to delete clip', 'error');
+            }
+        } catch (error) {
+            showToast('Error deleting clip', 'error');
+        }
+    }
+
+    async function openClipsFolder() {
+        try {
+            const response = await fetch('/api/open-clips-folder', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Folder opened', 'success');
+            }
+        } catch (error) {
+            showToast('Could not open folder', 'error');
+        }
+    }
+</script>
+{% endblock %}
+

@@ -92,8 +92,23 @@
                 <div class="card-header">
                     <h3><i class="fas fa-trophy"></i> Top Viral Clips</h3>
                     <div class="card-actions">
+                        <div class="export-all-controls">
+                            <select id="export-all-format" class="format-select-sm" title="Aspect Ratio for All">
+                                <option value="original">Original</option>
+                                <option value="9:16">9:16 Vertical</option>
+                                <option value="1:1">1:1 Square</option>
+                                <option value="4:5">4:5 Portrait</option>
+                            </select>
+                            <select id="export-all-mode" class="format-select-sm" title="Resize Mode">
+                                <option value="fit">Fit</option>
+                                <option value="crop">Crop</option>
+                            </select>
+                            <button class="btn btn-sm btn-primary" onclick="exportAllClips()">
+                                <i class="fas fa-download"></i> Export All Clips
+                            </button>
+                        </div>
                         <button class="btn btn-sm btn-secondary" onclick="exportResults()">
-                            <i class="fas fa-download"></i> Export
+                            <i class="fas fa-file-export"></i> Export JSON
                         </button>
                     </div>
                 </div>
@@ -436,6 +451,70 @@
             } else if (video.webkitRequestFullscreen) {
                 video.webkitRequestFullscreen();
             }
+        }
+    }
+    
+    async function exportAllClips() {
+        if (!currentTaskId || !currentResults) {
+            showToast('No analysis results loaded', 'error');
+            return;
+        }
+        
+        const clips = currentResults.clips || [];
+        if (clips.length === 0) {
+            showToast('No clips to export', 'error');
+            return;
+        }
+        
+        const aspectRatio = document.getElementById('export-all-format').value;
+        const resizeMode = document.getElementById('export-all-mode').value;
+        
+        const formatLabel = aspectRatio === 'original' ? 'Original' : aspectRatio;
+        
+        if (!confirm(`Export all ${clips.length} clips as ${formatLabel} (${resizeMode} mode)?`)) {
+            return;
+        }
+        
+        showLoading(`Exporting ${clips.length} clips (${formatLabel}, ${resizeMode})...`);
+        
+        try {
+            const response = await fetch('/api/export-all-clips', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: currentTaskId,
+                    aspect_ratio: aspectRatio,
+                    resize_mode: resizeMode
+                })
+            });
+            
+            const data = await response.json();
+            hideLoading();
+            
+            if (data.success) {
+                const successCount = data.clips.filter(c => c.status === 'success').length;
+                const skippedCount = data.clips.filter(c => c.status.includes('skipped')).length;
+                
+                let message = `Generated ${successCount} clips`;
+                if (skippedCount > 0) {
+                    message += `, ${skippedCount} skipped (already exist)`;
+                }
+                if (data.errors && data.errors.length > 0) {
+                    message += `, ${data.errors.length} failed`;
+                }
+                
+                showToast(message, 'success');
+                
+                // Offer to open clips page
+                if (confirm('Clips exported! Would you like to view them in the Clips Library?')) {
+                    window.location.href = '/clips';
+                }
+            } else {
+                showToast(data.error || 'Failed to export clips', 'error');
+            }
+        } catch (error) {
+            hideLoading();
+            showToast('Error exporting clips: ' + error.message, 'error');
         }
     }
     

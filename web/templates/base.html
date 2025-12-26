@@ -38,7 +38,10 @@
                     <i class="fas fa-chart-line"></i> Analyze
                 </a></li>
                 <li><a href="{{ url_for('results_page') }}" class="nav-link {% if request.endpoint == 'results_page' %}active{% endif %}">
-                    <i class="fas fa-film"></i> Results
+                    <i class="fas fa-chart-bar"></i> Results
+                </a></li>
+                <li><a href="{{ url_for('clips_page') }}" class="nav-link {% if request.endpoint == 'clips_page' %}active{% endif %}">
+                    <i class="fas fa-cut"></i> Clips
                 </a></li>
             </ul>
         </div>

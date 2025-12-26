@@ -304,6 +304,10 @@
                                     <option value="4:5">Portrait (4:5) - Instagram</option>
                                     <option value="4:3">Classic (4:3)</option>
                                 </select>
+                                <select id="mode-${index}" class="format-select" title="Resize Mode">
+                                    <option value="fit">Fit (black bars, full video)</option>
+                                    <option value="crop">Crop (fill frame, cut edges)</option>
+                                </select>
                                 <select id="duration-${index}" class="format-select" title="Duration">
                                     <option value="0">Full Clip (${Math.round(clip.duration)}s)</option>
                                     <option value="15" ${clip.duration >= 15 ? '' : 'disabled'}>15s</option>
@@ -437,10 +441,13 @@
     
     async function generateClip(index, startTime, endTime, videoPath, clipDuration) {
         const formatSelect = document.getElementById(`format-${index}`);
+        const modeSelect = document.getElementById(`mode-${index}`);
         const durationSelect = document.getElementById(`duration-${index}`);
         
         const aspectRatio = formatSelect ? formatSelect.value : 'original';
+        const resizeMode = modeSelect ? modeSelect.value : 'fit';
         const formatLabel = formatSelect ? formatSelect.options[formatSelect.selectedIndex].text : 'Original';
+        const modeLabel = modeSelect ? modeSelect.options[modeSelect.selectedIndex].text : 'Fit';
         
         // Get selected duration (0 means full clip)
         let selectedDuration = durationSelect ? parseInt(durationSelect.value) : 0;
@@ -453,7 +460,7 @@
         
         const durationLabel = selectedDuration > 0 ? `${selectedDuration}s` : `Full (${Math.round(clipDuration)}s)`;
         
-        showLoading(`Generating ${formatLabel} clip #${index + 1} (${durationLabel})...`);
+        showLoading(`Generating ${formatLabel} clip #${index + 1} (${modeLabel}, ${durationLabel})...`);
         
         try {
             const response = await fetch('/api/generate-clip', {
@@ -465,6 +472,7 @@
                     end_time: actualEndTime,
                     clip_index: index + 1,
                     aspect_ratio: aspectRatio,
+                    resize_mode: resizeMode,
                     target_duration: selectedDuration > 0 ? selectedDuration : null
                 })
             });

@@ -527,6 +527,7 @@ def generate_clip():
         end_time = data.get('end_time')
         clip_index = data.get('clip_index', 1)
         aspect_ratio = data.get('aspect_ratio', 'original')
+        resize_mode = data.get('resize_mode', 'fit')  # 'fit' (black bars) or 'crop' (fill)
         target_duration = data.get('target_duration')  # Optional custom duration
         
         if not all([video_path, start_time is not None, end_time is not None]):
@@ -551,9 +552,10 @@ def generate_clip():
         # Build filename parts
         parts = [safe_name, f"clip{clip_index}"]
         
-        # Add aspect ratio if not original
+        # Add aspect ratio and mode if not original
         if aspect_ratio != 'original':
             parts.append(aspect_ratio.replace(':', 'x'))
+            parts.append(resize_mode)  # 'fit' or 'crop'
         
         # Add duration
         parts.append(f"{int(actual_duration)}s")
@@ -573,7 +575,7 @@ def generate_clip():
         
         # Apply aspect ratio transformation if needed
         if aspect_ratio != 'original':
-            clip = apply_aspect_ratio(clip, aspect_ratio)
+            clip = apply_aspect_ratio(clip, aspect_ratio, mode=resize_mode)
         
         # Write clip with progress
         clip.write_videofile(
@@ -609,64 +611,24 @@ def generate_clip():
         return jsonify({'error': str(e)}), 500
 
 
-def apply_aspect_ratio(clip, aspect_ratio):
+def apply_aspect_ratio(clip, aspect_ratio, mode='fit'):
     """
     Apply aspect ratio transformation to a video clip.
-    Uses moviepy 2.x API.
     
     Args:
         clip: MoviePy VideoFileClip
         aspect_ratio: Target ratio ('9:16', '1:1', '4:5', '4:3')
+        mode: 'fit' (black bars, show full video) or 'crop' (fill frame, crop edges)
     
     Returns:
         Transformed clip
     """
+    from moviepy import ColorClip, CompositeVideoClip
+    
     # Get current dimensions
     w, h = clip.size
     
-    # Parse target aspect ratio
-    ratio_map = {
-        '9:16': 9/16,   # Vertical (TikTok, Reels, Shorts)
-        '1:1': 1/1,     # Square (Instagram)
-        '4:5': 4/5,     # Portrait (Instagram)
-        '4:3': 4/3,     # Classic TV
-        '16:9': 16/9,   # Widescreen
-    }
-    
-    target_ratio = ratio_map.get(aspect_ratio, w/h)
-    current_ratio = w / h
-    
-    if abs(current_ratio - target_ratio) < 0.01:
-        # Already correct ratio
-        return clip
-    
-    if target_ratio < current_ratio:
-        # Target is taller/narrower - crop width (center crop)
-        new_width = int(h * target_ratio)
-        x_center = w // 2
-        x1 = x_center - new_width // 2
-        x2 = x_center + new_width // 2
-        
-        # Handle both moviepy 1.x and 2.x
-        if hasattr(clip, 'cropped'):
-            clip = clip.cropped(x1=x1, x2=x2)
-        else:
-            clip = clip.crop(x1=x1, x2=x2)
-        
-    else:
-        # Target is wider - crop height (center crop)
-        new_height = int(w / target_ratio)
-        y_center = h // 2
-        y1 = y_center - new_height // 2
-        y2 = y_center + new_height // 2
-        
-        # Handle both moviepy 1.x and 2.x
-        if hasattr(clip, 'cropped'):
-            clip = clip.cropped(y1=y1, y2=y2)
-        else:
-            clip = clip.crop(y1=y1, y2=y2)
-    
-    # Resize to standard dimensions based on aspect ratio
+    # Standard output sizes
     standard_sizes = {
         '9:16': (1080, 1920),  # Vertical HD
         '1:1': (1080, 1080),   # Square
@@ -675,15 +637,85 @@ def apply_aspect_ratio(clip, aspect_ratio):
         '16:9': (1920, 1080),  # Full HD
     }
     
-    if aspect_ratio in standard_sizes:
-        target_w, target_h = standard_sizes[aspect_ratio]
-        # Handle both moviepy 1.x and 2.x
-        if hasattr(clip, 'resized'):
-            clip = clip.resized(newsize=(target_w, target_h))
-        else:
-            clip = clip.resize(newsize=(target_w, target_h))
+    target_w, target_h = standard_sizes.get(aspect_ratio, (w, h))
+    target_ratio = target_w / target_h
+    current_ratio = w / h
     
-    return clip
+    if abs(current_ratio - target_ratio) < 0.01:
+        # Already correct ratio, just resize
+        return resize_clip(clip, (target_w, target_h))
+    
+    if mode == 'fit':
+        # FIT MODE: Scale video to fit inside frame, add black bars
+        # This preserves the full video content
+        
+        if current_ratio > target_ratio:
+            # Video is wider than target - fit to width, add bars top/bottom
+            new_w = target_w
+            new_h = int(target_w / current_ratio)
+        else:
+            # Video is taller than target - fit to height, add bars left/right
+            new_h = target_h
+            new_w = int(target_h * current_ratio)
+        
+        # Resize video to fit
+        resized_clip = resize_clip(clip, (new_w, new_h))
+        
+        # Create black background
+        bg = ColorClip(size=(target_w, target_h), color=(0, 0, 0))
+        bg = bg.with_duration(clip.duration)
+        
+        # Center the video on the background
+        x_pos = (target_w - new_w) // 2
+        y_pos = (target_h - new_h) // 2
+        
+        # Composite video on background
+        final = CompositeVideoClip([
+            bg,
+            resized_clip.with_position((x_pos, y_pos))
+        ])
+        
+        return final
+        
+    else:
+        # CROP MODE: Fill frame by cropping edges (center crop)
+        
+        if target_ratio < current_ratio:
+            # Target is taller/narrower - crop width (center crop)
+            new_width = int(h * target_ratio)
+            x_center = w // 2
+            x1 = x_center - new_width // 2
+            x2 = x_center + new_width // 2
+            
+            clip = crop_clip(clip, x1=x1, x2=x2)
+            
+        else:
+            # Target is wider - crop height (center crop)
+            new_height = int(w / target_ratio)
+            y_center = h // 2
+            y1 = y_center - new_height // 2
+            y2 = y_center + new_height // 2
+            
+            clip = crop_clip(clip, y1=y1, y2=y2)
+        
+        # Resize to target dimensions
+        return resize_clip(clip, (target_w, target_h))
+
+
+def resize_clip(clip, size):
+    """Resize clip with moviepy 1.x/2.x compatibility."""
+    if hasattr(clip, 'resized'):
+        return clip.resized(size)
+    else:
+        return clip.resize(newsize=size)
+
+
+def crop_clip(clip, x1=None, y1=None, x2=None, y2=None):
+    """Crop clip with moviepy 1.x/2.x compatibility."""
+    if hasattr(clip, 'cropped'):
+        return clip.cropped(x1=x1, y1=y1, x2=x2, y2=y2)
+    else:
+        return clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
 
 
 @app.route('/api/open-clips-folder', methods=['POST'])

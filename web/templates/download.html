@@ -315,5 +315,16 @@
         if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
         return num.toString();
     }
+
+    // Check for URL from search page
+    document.addEventListener('DOMContentLoaded', function() {
+        const savedUrl = localStorage.getItem('downloadUrl');
+        if (savedUrl) {
+            document.getElementById('video-url').value = savedUrl;
+            localStorage.removeItem('downloadUrl');
+            // Auto-fetch info
+            fetchVideoInfo();
+        }
+    });
 </script>
 {% endblock %}

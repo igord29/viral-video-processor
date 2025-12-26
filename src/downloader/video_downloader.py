@@ -139,18 +139,36 @@ class VideoDownloader:
 
         return is_viral
 
-    def search_viral_videos(self, query: str, max_results: int = 10) -> list:
+    def search_viral_videos(self, query: str, max_results: int = 10, platform: str = 'youtube', content_type: str = 'all') -> list:
         """
-        Search for viral videos on YouTube.
+        Search for viral videos on various platforms.
 
         Args:
             query: Search query
             max_results: Maximum number of results to return
+            platform: Platform to search ('youtube', 'youtube_shorts', 'tiktok', 'twitch')
+            content_type: Type of content ('all', 'shorts', 'long')
 
         Returns:
             List of video information dictionaries
         """
-        search_url = f"ytsearch{max_results}:{query}"
+        # Build search URL based on platform
+        if platform == 'youtube_shorts':
+            # Search for YouTube Shorts specifically
+            search_query = f"{query} #shorts"
+            search_url = f"ytsearch{max_results}:{search_query}"
+        elif platform == 'tiktok':
+            # TikTok search (limited support - searches via hashtag on YouTube)
+            # Note: Direct TikTok search requires different approach
+            search_query = f"{query} tiktok viral"
+            search_url = f"ytsearch{max_results}:{search_query}"
+        elif platform == 'twitch':
+            # Search for Twitch clips on YouTube (Twitch doesn't have public search API)
+            search_query = f"{query} twitch clip"
+            search_url = f"ytsearch{max_results}:{search_query}"
+        else:
+            # Default YouTube search
+            search_url = f"ytsearch{max_results}:{query}"
 
         ydl_opts = {
             'quiet': True,
@@ -159,7 +177,7 @@ class VideoDownloader:
         }
 
         try:
-            print_info(f"Searching for: {query}")
+            print_info(f"Searching {platform} for: {query}")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 result = ydl.extract_info(search_url, download=False)
@@ -172,12 +190,22 @@ class VideoDownloader:
                             video_url = f"https://www.youtube.com/watch?v={entry['id']}"
                             info = self.get_video_info(video_url)
                             if info:
+                                info['platform'] = platform
+                                info['search_query'] = query
+                                
+                                # Filter by content type if specified
+                                duration = info.get('duration', 0)
+                                if content_type == 'shorts' and duration > 60:
+                                    continue  # Skip long videos when searching for shorts
+                                if content_type == 'long' and duration < 60:
+                                    continue  # Skip short videos when searching for long content
+                                
                                 videos.append(info)
 
                 # Sort by view count
                 videos.sort(key=lambda x: x.get('view_count', 0), reverse=True)
 
-                print_success(f"Found {len(videos)} videos")
+                print_success(f"Found {len(videos)} videos on {platform}")
                 return videos
 
         except Exception as e:

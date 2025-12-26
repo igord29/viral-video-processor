@@ -405,24 +405,39 @@ def list_saved_analyses():
 
 @app.route('/api/search', methods=['POST'])
 def search_videos():
-    """Search for viral videos."""
+    """Search for viral videos across platforms."""
     try:
         data = request.get_json()
         query = data.get('query')
         max_results = data.get('max_results', 10)
+        platform = data.get('platform', 'youtube')
+        content_type = data.get('content_type', 'all')
         
         if not query:
             return jsonify({'error': 'Search query is required'}), 400
         
         downloader = VideoDownloader()
-        results = downloader.search_viral_videos(query, max_results=max_results)
+        results = downloader.search_viral_videos(
+            query, 
+            max_results=max_results,
+            platform=platform,
+            content_type=content_type
+        )
         
         return jsonify({
             'success': True,
-            'results': results
+            'results': results,
+            'platform': platform,
+            'query': query
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/search')
+def search_page():
+    """Video search page."""
+    return render_template('search.html')
 
 
 @app.route('/api/videos', methods=['GET'])

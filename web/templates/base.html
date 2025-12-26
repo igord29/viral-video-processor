@@ -28,6 +28,9 @@
                 <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
                     <i class="fas fa-home"></i> Dashboard
                 </a></li>
+                <li><a href="{{ url_for('search_page') }}" class="nav-link {% if request.endpoint == 'search_page' %}active{% endif %}">
+                    <i class="fas fa-search"></i> Search
+                </a></li>
                 <li><a href="{{ url_for('download_page') }}" class="nav-link {% if request.endpoint == 'download_page' %}active{% endif %}">
                     <i class="fas fa-download"></i> Download
                 </a></li>

@@ -1,5 +1,6 @@
 """Display utilities using Rich for beautiful CLI output."""
 
+import sys
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -7,32 +8,48 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 from rich import print as rprint
 
-console = Console()
+# Use force_terminal=True and legacy_windows=False for better Windows support
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def print_header(text: str):
     """Print a formatted header."""
-    console.print(f"\n[bold cyan]{text}[/bold cyan]\n")
+    try:
+        console.print(f"\n[bold cyan]{text}[/bold cyan]\n")
+    except UnicodeEncodeError:
+        print(f"\n{text}\n")
 
 
 def print_success(text: str):
     """Print a success message."""
-    console.print(f"[green]✓[/green] {text}")
+    try:
+        console.print(f"[green][OK][/green] {text}")
+    except UnicodeEncodeError:
+        print(f"[OK] {text}")
 
 
 def print_error(text: str):
     """Print an error message."""
-    console.print(f"[red]✗[/red] {text}")
+    try:
+        console.print(f"[red][ERROR][/red] {text}")
+    except UnicodeEncodeError:
+        print(f"[ERROR] {text}")
 
 
 def print_warning(text: str):
     """Print a warning message."""
-    console.print(f"[yellow]⚠[/yellow] {text}")
+    try:
+        console.print(f"[yellow][WARN][/yellow] {text}")
+    except UnicodeEncodeError:
+        print(f"[WARN] {text}")
 
 
 def print_info(text: str):
     """Print an info message."""
-    console.print(f"[blue]ℹ[/blue] {text}")
+    try:
+        console.print(f"[blue][INFO][/blue] {text}")
+    except UnicodeEncodeError:
+        print(f"[INFO] {text}")
 
 
 def confirm_action(prompt: str) -> bool:

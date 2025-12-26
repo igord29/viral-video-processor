@@ -48,6 +48,67 @@
                         </small>
                     </div>
 
+                    <!-- Clip Duration Settings -->
+                    <div class="form-group">
+                        <label>
+                            <i class="fas fa-clock"></i> Target Clip Length
+                        </label>
+                        <div class="duration-presets">
+                            <button type="button" class="preset-btn" onclick="setClipDuration(15, 30)" title="Short clips for TikTok/Reels">
+                                <span class="preset-range">15-30s</span>
+                                <span class="preset-label">Short</span>
+                            </button>
+                            <button type="button" class="preset-btn active" onclick="setClipDuration(15, 60)" title="Standard viral clips">
+                                <span class="preset-range">15-60s</span>
+                                <span class="preset-label">Standard</span>
+                            </button>
+                            <button type="button" class="preset-btn" onclick="setClipDuration(30, 120)" title="Longer highlight clips">
+                                <span class="preset-range">30s-2min</span>
+                                <span class="preset-label">Medium</span>
+                            </button>
+                            <button type="button" class="preset-btn" onclick="setClipDuration(60, 300)" title="Extended clips">
+                                <span class="preset-range">1-5min</span>
+                                <span class="preset-label">Long</span>
+                            </button>
+                            <button type="button" class="preset-btn" onclick="setClipDuration(15, 600)" title="Find all clips">
+                                <span class="preset-range">15s-10min</span>
+                                <span class="preset-label">All Lengths</span>
+                            </button>
+                        </div>
+                        <div class="custom-duration">
+                            <div class="duration-input-group">
+                                <label for="min-duration">Min:</label>
+                                <select id="min-duration" class="duration-select">
+                                    <option value="10">10s</option>
+                                    <option value="15" selected>15s</option>
+                                    <option value="30">30s</option>
+                                    <option value="45">45s</option>
+                                    <option value="60">60s (1 min)</option>
+                                    <option value="90">90s (1.5 min)</option>
+                                    <option value="120">120s (2 min)</option>
+                                </select>
+                            </div>
+                            <span class="duration-separator">to</span>
+                            <div class="duration-input-group">
+                                <label for="max-duration">Max:</label>
+                                <select id="max-duration" class="duration-select">
+                                    <option value="30">30s</option>
+                                    <option value="45">45s</option>
+                                    <option value="60" selected>60s (1 min)</option>
+                                    <option value="90">90s (1.5 min)</option>
+                                    <option value="120">120s (2 min)</option>
+                                    <option value="180">180s (3 min)</option>
+                                    <option value="300">300s (5 min)</option>
+                                    <option value="600">600s (10 min)</option>
+                                    <option value="1200">1200s (20 min)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <small class="form-help">
+                            AI will look for viral moments within this duration range
+                        </small>
+                    </div>
+
                     <div class="button-group">
                         <button class="btn btn-primary" onclick="startAnalysis()">
                             <i class="fas fa-play"></i> Start Analysis
@@ -217,9 +278,179 @@
                     </ul>
                 </div>
             </div>
+
+            <!-- Clip Length Guide -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-ruler-horizontal"></i> Clip Length Guide</h3>
+                </div>
+                <div class="card-body">
+                    <div class="platform-guide">
+                        <div class="platform-item">
+                            <i class="fab fa-tiktok"></i>
+                            <div>
+                                <strong>TikTok</strong>
+                                <span>15-60s optimal</span>
+                            </div>
+                        </div>
+                        <div class="platform-item">
+                            <i class="fab fa-instagram"></i>
+                            <div>
+                                <strong>Instagram Reels</strong>
+                                <span>15-90s optimal</span>
+                            </div>
+                        </div>
+                        <div class="platform-item">
+                            <i class="fab fa-youtube"></i>
+                            <div>
+                                <strong>YouTube Shorts</strong>
+                                <span>15-60s optimal</span>
+                            </div>
+                        </div>
+                        <div class="platform-item">
+                            <i class="fab fa-twitter"></i>
+                            <div>
+                                <strong>Twitter/X</strong>
+                                <span>30-60s optimal</span>
+                            </div>
+                        </div>
+                        <div class="platform-item">
+                            <i class="fab fa-youtube"></i>
+                            <div>
+                                <strong>YouTube Clips</strong>
+                                <span>1-5min optimal</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+.duration-presets {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.preset-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 80px;
+}
+
+.preset-btn:hover {
+    border-color: var(--primary-color);
+    background: var(--bg-hover);
+}
+
+.preset-btn.active {
+    border-color: var(--primary-color);
+    background: rgba(14, 165, 233, 0.15);
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+}
+
+.preset-range {
+    font-weight: 700;
+    color: var(--primary-color);
+    font-size: 0.9rem;
+}
+
+.preset-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.custom-duration {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.duration-input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.duration-input-group label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.duration-select {
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    min-width: 120px;
+}
+
+.duration-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.duration-separator {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Platform Guide Styles */
+.platform-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.platform-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 0.375rem;
+}
+
+.platform-item i {
+    font-size: 1.25rem;
+    width: 1.5rem;
+    text-align: center;
+    color: var(--primary-color);
+}
+
+.platform-item div {
+    display: flex;
+    flex-direction: column;
+}
+
+.platform-item strong {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.platform-item span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+</style>
 
 <script>
     let currentTaskId = null;
@@ -235,6 +466,16 @@
             localStorage.removeItem('videoPath');
         }
     });
+
+    function setClipDuration(min, max) {
+        // Update select values
+        document.getElementById('min-duration').value = min;
+        document.getElementById('max-duration').value = max;
+        
+        // Update active preset button
+        document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.closest('.preset-btn').classList.add('active');
+    }
 
     async function loadVideos() {
         try {
@@ -260,9 +501,16 @@
     async function startAnalysis() {
         const videoPath = document.getElementById('video-select').value;
         const model = document.getElementById('model-select').value;
+        const minDuration = parseInt(document.getElementById('min-duration').value);
+        const maxDuration = parseInt(document.getElementById('max-duration').value);
 
         if (!videoPath) {
             showToast('Please select a video', 'error');
+            return;
+        }
+
+        if (minDuration >= maxDuration) {
+            showToast('Minimum duration must be less than maximum', 'error');
             return;
         }
 
@@ -279,7 +527,9 @@
                 body: JSON.stringify({ 
                     video_path: videoPath, 
                     model: model,
-                    task_id: currentTaskId 
+                    task_id: currentTaskId,
+                    min_clip_duration: minDuration,
+                    max_clip_duration: maxDuration
                 })
             });
 

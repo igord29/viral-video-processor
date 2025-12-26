@@ -15,7 +15,7 @@ from datetime import datetime
 
 from src.downloader import VideoDownloader, BatchVideoDownloader
 from src.transcription import WhisperTranscriber
-from src.analysis import EngagementAnalyzer, AudioAnalyzer, SceneAnalyzer
+from src.analysis import EngagementAnalyzer, AudioAnalyzer
 from src.utils import Config, console
 
 app = Flask(__name__, 
@@ -63,7 +63,7 @@ def get_config():
         'clips_path': str(Config.CLIPS_PATH),
         'max_clip_duration': Config.MAX_CLIP_DURATION,
         'min_clip_duration': Config.MIN_CLIP_DURATION,
-        'top_n_clips': Config.TOP_N_CLIPS,
+        'top_n_clips': Config.TOP_CLIPS_TO_SHOW,
         'has_anthropic_key': bool(Config.ANTHROPIC_API_KEY),
         'audio_spike_threshold': Config.AUDIO_SPIKE_THRESHOLD,
         'scene_change_threshold': Config.SCENE_CHANGE_THRESHOLD,
@@ -76,6 +76,9 @@ def get_video_info():
     """Get video metadata without downloading."""
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid JSON data'}), 400
+            
         url = data.get('url')
         
         if not url:
@@ -85,7 +88,7 @@ def get_video_info():
         info = downloader.get_video_info(url)
         
         if not info:
-            return jsonify({'error': 'Failed to fetch video info'}), 400
+            return jsonify({'error': 'Failed to fetch video info. Please check the URL and try again.'}), 400
         
         return jsonify({
             'success': True,
@@ -94,14 +97,22 @@ def get_video_info():
                 'duration': info.get('duration', 0),
                 'views': info.get('view_count', 0),
                 'likes': info.get('like_count', 0),
-                'channel': info.get('uploader', 'Unknown'),
+                'channel': info.get('channel', 'Unknown'),
                 'thumbnail': info.get('thumbnail', ''),
                 'description': info.get('description', '')[:500],
                 'upload_date': info.get('upload_date', ''),
             }
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        error_msg = str(e)
+        try:
+            print(f"Error in get_video_info: {error_msg}")
+            print(traceback.format_exc())
+        except UnicodeEncodeError:
+            # Handle Windows encoding issues
+            print(f"Error in get_video_info: {error_msg.encode('ascii', 'replace').decode()}")
+        return jsonify({'error': f'Failed to fetch video info: {error_msg}'}), 500
 
 
 @app.route('/api/download', methods=['POST'])
@@ -172,6 +183,8 @@ def analyze_video():
         video_path = data.get('video_path')
         model_size = data.get('model', 'base')
         task_id = data.get('task_id', datetime.now().strftime('%Y%m%d%H%M%S'))
+        min_clip_duration = data.get('min_clip_duration', Config.MIN_CLIP_DURATION)
+        max_clip_duration = data.get('max_clip_duration', Config.MAX_CLIP_DURATION)
         
         if not video_path:
             return jsonify({'error': 'Video path is required'}), 400
@@ -190,7 +203,7 @@ def analyze_video():
                 processing_status[task_id]['progress'] = 10
                 
                 transcriber = WhisperTranscriber(model_size=model_size)
-                result = transcriber.transcribe(video_path)
+                result = transcriber.transcribe_video(video_path)
                 
                 if not result:
                     raise Exception("Transcription failed")
@@ -198,10 +211,14 @@ def analyze_video():
                 processing_status[task_id]['progress'] = 40
                 
                 # Step 2: Engagement Analysis
-                processing_status[task_id]['message'] = 'Analyzing engagement...'
+                processing_status[task_id]['message'] = f'Analyzing engagement ({min_clip_duration}s-{max_clip_duration}s clips)...'
                 
                 analyzer = EngagementAnalyzer()
-                clips = analyzer.analyze_transcript(result)
+                clips = analyzer.analyze_segments(
+                    result.get('segments', []),
+                    min_duration=min_clip_duration,
+                    max_duration=max_clip_duration
+                )
                 
                 processing_status[task_id]['progress'] = 70
                 
@@ -209,7 +226,7 @@ def analyze_video():
                 processing_status[task_id]['message'] = 'Analyzing audio spikes...'
                 
                 audio_analyzer = AudioAnalyzer()
-                audio_spikes = audio_analyzer.detect_spikes_from_video(video_path)
+                audio_spikes = audio_analyzer.get_viral_audio_moments(video_path)
                 
                 processing_status[task_id]['progress'] = 90
                 
@@ -219,7 +236,11 @@ def analyze_video():
                     'clips': clips,
                     'audio_spikes': audio_spikes or [],
                     'transcript': result.get('text', ''),
-                    'segments': result.get('segments', [])
+                    'segments': result.get('segments', []),
+                    'settings': {
+                        'min_clip_duration': min_clip_duration,
+                        'max_clip_duration': max_clip_duration
+                    }
                 }
                 
                 processing_status[task_id] = {
@@ -287,7 +308,7 @@ def search_videos():
             return jsonify({'error': 'Search query is required'}), 400
         
         downloader = VideoDownloader()
-        results = downloader.search_videos(query, max_results=max_results)
+        results = downloader.search_viral_videos(query, max_results=max_results)
         
         return jsonify({
             'success': True,
@@ -311,7 +332,8 @@ def list_videos():
                             'name': video_file.name,
                             'path': str(video_file),
                             'size': video_file.stat().st_size,
-                            'modified': video_file.stat().st_mtime
+                            'modified': video_file.stat().st_mtime,
+                            'folder': path.name
                         })
         
         return jsonify({
@@ -322,17 +344,291 @@ def list_videos():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/videos')
+def videos_page():
+    """Videos library page."""
+    return render_template('videos.html')
+
+
+@app.route('/api/open-folder', methods=['POST'])
+def open_folder():
+    """Open downloads folder in file explorer."""
+    try:
+        import subprocess
+        import sys
+        
+        folder_path = str(Config.DOWNLOAD_PATH.absolute())
+        
+        if sys.platform == 'win32':
+            subprocess.Popen(['explorer', folder_path])
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.Popen(['open', folder_path])
+        else:  # Linux
+            subprocess.Popen(['xdg-open', folder_path])
+        
+        return jsonify({'success': True, 'message': 'Folder opened'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/video/<path:filename>')
+def serve_video(filename):
+    """Serve a video file for playback or download."""
+    try:
+        # Check in downloads folder first
+        video_path = Config.DOWNLOAD_PATH / filename
+        if video_path.exists():
+            return send_file(video_path, as_attachment=False)
+        
+        # Check in videos folder
+        video_path = Config.VIDEO_PATH / filename
+        if video_path.exists():
+            return send_file(video_path, as_attachment=False)
+        
+        return jsonify({'error': 'Video not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/delete-video', methods=['POST'])
+def delete_video():
+    """Delete a video file."""
+    try:
+        data = request.get_json()
+        video_path = data.get('path')
+        
+        if not video_path:
+            return jsonify({'error': 'Video path is required'}), 400
+        
+        path = Path(video_path)
+        if path.exists():
+            path.unlink()
+            return jsonify({'success': True, 'message': 'Video deleted'})
+        else:
+            return jsonify({'error': 'Video not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/generate-clip', methods=['POST'])
+def generate_clip():
+    """Generate a video clip from start to end time with optional aspect ratio conversion."""
+    try:
+        data = request.get_json()
+        video_path = data.get('video_path')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        clip_index = data.get('clip_index', 1)
+        aspect_ratio = data.get('aspect_ratio', 'original')
+        target_duration = data.get('target_duration')  # Optional custom duration
+        
+        if not all([video_path, start_time is not None, end_time is not None]):
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        # Import moviepy
+        try:
+            from moviepy.editor import VideoFileClip
+        except ImportError:
+            from moviepy import VideoFileClip
+        
+        # Ensure clips directory exists
+        Config.CLIPS_PATH.mkdir(parents=True, exist_ok=True)
+        
+        # Calculate actual duration
+        actual_duration = end_time - start_time
+        
+        # Generate output filename with aspect ratio and duration
+        source_name = Path(video_path).stem
+        safe_name = Config.get_safe_filename(source_name)[:50]  # Limit name length
+        
+        # Build filename parts
+        parts = [safe_name, f"clip{clip_index}"]
+        
+        # Add aspect ratio if not original
+        if aspect_ratio != 'original':
+            parts.append(aspect_ratio.replace(':', 'x'))
+        
+        # Add duration
+        parts.append(f"{int(actual_duration)}s")
+        
+        output_filename = "_".join(parts) + ".mp4"
+        output_path = Config.CLIPS_PATH / output_filename
+        
+        # Extract clip using moviepy 2.x API
+        video = VideoFileClip(video_path)
+        
+        # moviepy 2.x uses with_subclip or subclipped
+        end_t = min(end_time, video.duration)
+        clip = video.with_subclip(start_time, end_t)
+        
+        # Apply aspect ratio transformation if needed
+        if aspect_ratio != 'original':
+            clip = apply_aspect_ratio(clip, aspect_ratio)
+        
+        # Write clip with progress
+        clip.write_videofile(
+            str(output_path),
+            codec='libx264',
+            audio_codec='aac',
+            logger=None
+        )
+        
+        # Clean up
+        try:
+            clip.close()
+            video.close()
+        except:
+            pass  # Some versions don't have close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Clip generated successfully',
+            'filename': output_filename,
+            'clip_path': str(output_path),
+            'duration': end_time - start_time,
+            'aspect_ratio': aspect_ratio
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error generating clip: {str(e)}")
+        try:
+            print(traceback.format_exc())
+        except:
+            pass
+        return jsonify({'error': str(e)}), 500
+
+
+def apply_aspect_ratio(clip, aspect_ratio):
+    """
+    Apply aspect ratio transformation to a video clip.
+    Uses moviepy 2.x API.
+    
+    Args:
+        clip: MoviePy VideoFileClip
+        aspect_ratio: Target ratio ('9:16', '1:1', '4:5', '4:3')
+    
+    Returns:
+        Transformed clip
+    """
+    # Get current dimensions
+    w, h = clip.size
+    
+    # Parse target aspect ratio
+    ratio_map = {
+        '9:16': 9/16,   # Vertical (TikTok, Reels, Shorts)
+        '1:1': 1/1,     # Square (Instagram)
+        '4:5': 4/5,     # Portrait (Instagram)
+        '4:3': 4/3,     # Classic TV
+        '16:9': 16/9,   # Widescreen
+    }
+    
+    target_ratio = ratio_map.get(aspect_ratio, w/h)
+    current_ratio = w / h
+    
+    if abs(current_ratio - target_ratio) < 0.01:
+        # Already correct ratio
+        return clip
+    
+    if target_ratio < current_ratio:
+        # Target is taller/narrower - crop width (center crop)
+        new_width = int(h * target_ratio)
+        x_center = w // 2
+        x1 = x_center - new_width // 2
+        x2 = x_center + new_width // 2
+        
+        # moviepy 2.x uses with_crop
+        clip = clip.with_crop(x1=x1, x2=x2)
+        
+    else:
+        # Target is wider - crop height (center crop)
+        new_height = int(w / target_ratio)
+        y_center = h // 2
+        y1 = y_center - new_height // 2
+        y2 = y_center + new_height // 2
+        
+        # moviepy 2.x uses with_crop
+        clip = clip.with_crop(y1=y1, y2=y2)
+    
+    # Resize to standard dimensions based on aspect ratio
+    standard_sizes = {
+        '9:16': (1080, 1920),  # Vertical HD
+        '1:1': (1080, 1080),   # Square
+        '4:5': (1080, 1350),   # Instagram portrait
+        '4:3': (1440, 1080),   # Classic 4:3
+        '16:9': (1920, 1080),  # Full HD
+    }
+    
+    if aspect_ratio in standard_sizes:
+        target_w, target_h = standard_sizes[aspect_ratio]
+        # moviepy 2.x uses resized()
+        clip = clip.resized(newsize=(target_w, target_h))
+    
+    return clip
+
+
+@app.route('/api/open-clips-folder', methods=['POST'])
+def open_clips_folder():
+    """Open clips folder in file explorer."""
+    try:
+        import subprocess
+        import sys
+        
+        # Ensure clips directory exists
+        Config.CLIPS_PATH.mkdir(parents=True, exist_ok=True)
+        folder_path = str(Config.CLIPS_PATH.absolute())
+        
+        if sys.platform == 'win32':
+            subprocess.Popen(['explorer', folder_path])
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.Popen(['open', folder_path])
+        else:  # Linux
+            subprocess.Popen(['xdg-open', folder_path])
+        
+        return jsonify({'success': True, 'message': 'Folder opened'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clips', methods=['GET'])
+def list_clips():
+    """List all generated clips."""
+    try:
+        clips = []
+        
+        if Config.CLIPS_PATH.exists():
+            for clip_file in Config.CLIPS_PATH.glob('*.*'):
+                if clip_file.suffix.lower() in ['.mp4', '.mkv', '.avi', '.mov', '.webm']:
+                    clips.append({
+                        'name': clip_file.name,
+                        'path': str(clip_file),
+                        'size': clip_file.stat().st_size,
+                        'modified': clip_file.stat().st_mtime
+                    })
+        
+        return jsonify({
+            'success': True,
+            'clips': sorted(clips, key=lambda x: x['modified'], reverse=True)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("🎬 Viral Video Processor - Web Interface")
+    print("Viral Video Processor - Web Interface")
     print("="*60)
-    print(f"\n✨ Server starting at: http://localhost:5000")
-    print("\n📁 Folders:")
+    print(f"\nServer starting at: http://localhost:5000")
+    print("\nFolders:")
     print(f"   Downloads: {Config.DOWNLOAD_PATH}")
     print(f"   Videos: {Config.VIDEO_PATH}")
     print(f"   Clips: {Config.CLIPS_PATH}")
-    print("\n🔑 API Status:")
-    print(f"   Anthropic API: {'✓ Configured' if Config.ANTHROPIC_API_KEY else '✗ Not set'}")
+    print("\nAPI Status:")
+    print(f"   Anthropic API: {'Configured' if Config.ANTHROPIC_API_KEY else 'Not set'}")
     print("\n" + "="*60 + "\n")
     
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    # Use PORT from environment (Railway) or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    
+    app.run(debug=debug, host='0.0.0.0', port=port, threaded=True)

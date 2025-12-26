@@ -1,0 +1,11 @@
+# Nixpacks configuration for Railway deployment
+
+[phases.setup]
+nixPkgs = ["ffmpeg", "libGL", "libGLU", "xorg.libX11"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python web_app.py"
+

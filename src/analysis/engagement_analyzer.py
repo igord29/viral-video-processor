@@ -14,21 +14,27 @@ class EngagementAnalyzer:
         """Initialize the engagement analyzer."""
         self.client = anthropic.Anthropic(api_key=Config.ANTHROPIC_API_KEY)
 
-    def analyze_segments(self, segments: List[Dict], context: str = "") -> List[Dict]:
+    def analyze_segments(self, segments: List[Dict], context: str = "", min_duration: int = None, max_duration: int = None) -> List[Dict]:
         """
         Analyze transcript segments for engagement potential.
 
         Args:
             segments: List of transcript segments with start/end times and text
             context: Optional video context (title, description)
+            min_duration: Minimum clip duration in seconds (default from config)
+            max_duration: Maximum clip duration in seconds (default from config)
 
         Returns:
             List of scored clip candidates
         """
-        print_info("Analyzing segments for engagement potential...")
+        # Use provided durations or fall back to config
+        min_dur = min_duration if min_duration is not None else Config.MIN_CLIP_DURATION
+        max_dur = max_duration if max_duration is not None else Config.MAX_CLIP_DURATION
+        
+        print_info(f"Analyzing segments for engagement potential ({min_dur}s-{max_dur}s clips)...")
 
-        # Group segments into potential clips (15-60 seconds)
-        potential_clips = self._create_potential_clips(segments)
+        # Group segments into potential clips
+        potential_clips = self._create_potential_clips(segments, min_dur, max_dur)
 
         print_info(f"Found {len(potential_clips)} potential clips to analyze")
 
@@ -62,14 +68,19 @@ class EngagementAnalyzer:
 
         return scored_clips
 
-    def _create_potential_clips(self, segments: List[Dict]) -> List[Dict]:
+    def _create_potential_clips(self, segments: List[Dict], min_duration: int = None, max_duration: int = None) -> List[Dict]:
         """
         Create potential clips from segments.
 
         Combines consecutive segments into clips between MIN and MAX duration.
+        
+        Args:
+            segments: List of transcript segments
+            min_duration: Minimum clip duration in seconds
+            max_duration: Maximum clip duration in seconds
         """
-        min_duration = Config.MIN_CLIP_DURATION
-        max_duration = Config.MAX_CLIP_DURATION
+        min_duration = min_duration if min_duration is not None else Config.MIN_CLIP_DURATION
+        max_duration = max_duration if max_duration is not None else Config.MAX_CLIP_DURATION
 
         potential_clips = []
         current_clip_segments = []
@@ -124,7 +135,7 @@ class EngagementAnalyzer:
             prompt = self._create_scoring_prompt(clip, context)
 
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=500,
                 temperature=0.3,
                 messages=[

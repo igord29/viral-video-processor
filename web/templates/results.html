@@ -76,6 +76,13 @@
                                 <div class="summary-label">Audio Spikes</div>
                             </div>
                         </div>
+                        <div class="summary-item">
+                            <i class="fas fa-ruler-horizontal"></i>
+                            <div>
+                                <div class="summary-value" id="clip-range">15-60s</div>
+                                <div class="summary-label">Clip Length</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -215,9 +222,21 @@
         // Display summary
         const clips = results.clips || [];
         const audioSpikes = results.audio_spikes || [];
+        const settings = results.settings || {};
         
         document.getElementById('total-clips').textContent = clips.length;
         document.getElementById('audio-spikes').textContent = audioSpikes.length;
+        
+        // Display clip range settings
+        if (settings.min_clip_duration && settings.max_clip_duration) {
+            const minStr = settings.min_clip_duration >= 60 
+                ? `${Math.floor(settings.min_clip_duration / 60)}m` 
+                : `${settings.min_clip_duration}s`;
+            const maxStr = settings.max_clip_duration >= 60 
+                ? `${Math.floor(settings.max_clip_duration / 60)}m` 
+                : `${settings.max_clip_duration}s`;
+            document.getElementById('clip-range').textContent = `${minStr}-${maxStr}`;
+        }
         
         if (clips.length > 0) {
             const avgScore = clips.reduce((sum, clip) => sum + clip.score, 0) / clips.length;
@@ -239,6 +258,8 @@
 
     function displayClips(clips) {
         const container = document.getElementById('clips-list');
+        const videoPath = currentResults?.video_path || '';
+        const videoFilename = videoPath.split(/[\\/]/).pop();
         
         if (clips.length === 0) {
             container.innerHTML = '<p class="text-center">No clips found</p>';
@@ -246,7 +267,7 @@
         }
 
         container.innerHTML = clips.map((clip, index) => `
-            <div class="clip-card">
+            <div class="clip-card" id="clip-${index}">
                 <div class="clip-header">
                     <div class="clip-rank">#${index + 1}</div>
                     <div class="clip-score ${getScoreClass(clip.score)}">
@@ -254,54 +275,217 @@
                     </div>
                 </div>
                 <div class="clip-body">
-                    <div class="clip-time">
-                        <i class="fas fa-clock"></i>
-                        ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}
-                        <span class="clip-duration">(${clip.duration}s)</span>
+                    <!-- Video Preview Section -->
+                    <div class="clip-video-section">
+                        <div class="clip-video-container">
+                            <video 
+                                id="video-${index}" 
+                                class="clip-video-player"
+                                preload="metadata"
+                            >
+                                <source src="/api/video/${encodeURIComponent(videoFilename)}#t=${clip.start_time},${clip.end_time}" type="video/mp4">
+                                Your browser does not support video playback.
+                            </video>
+                            <div class="video-controls">
+                                <button class="video-btn play-btn" onclick="playClipPreview(${index}, ${clip.start_time}, ${clip.end_time})">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="video-btn" onclick="toggleFullscreen(${index})">
+                                    <i class="fas fa-expand"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="clip-actions">
+                            <div class="export-options">
+                                <select id="format-${index}" class="format-select" title="Aspect Ratio">
+                                    <option value="original">Original (16:9)</option>
+                                    <option value="9:16">Vertical (9:16) - TikTok/Reels</option>
+                                    <option value="1:1">Square (1:1) - Instagram</option>
+                                    <option value="4:5">Portrait (4:5) - Instagram</option>
+                                    <option value="4:3">Classic (4:3)</option>
+                                </select>
+                                <select id="duration-${index}" class="format-select" title="Duration">
+                                    <option value="0">Full Clip (${Math.round(clip.duration)}s)</option>
+                                    <option value="15" ${clip.duration >= 15 ? '' : 'disabled'}>15s</option>
+                                    <option value="30" ${clip.duration >= 30 ? '' : 'disabled'}>30s</option>
+                                    <option value="45" ${clip.duration >= 45 ? '' : 'disabled'}>45s</option>
+                                    <option value="60" ${clip.duration >= 60 ? '' : 'disabled'}>60s (1 min)</option>
+                                    <option value="120" ${clip.duration >= 120 ? '' : 'disabled'}>120s (2 min)</option>
+                                    <option value="180" ${clip.duration >= 180 ? '' : 'disabled'}>180s (3 min)</option>
+                                    <option value="300" ${clip.duration >= 300 ? '' : 'disabled'}>300s (5 min)</option>
+                                    <option value="600" ${clip.duration >= 600 ? '' : 'disabled'}>600s (10 min)</option>
+                                    <option value="1200" ${clip.duration >= 1200 ? '' : 'disabled'}>1200s (20 min)</option>
+                                </select>
+                                <button class="btn btn-sm btn-primary" onclick="generateClip(${index}, ${clip.start_time}, ${clip.end_time}, '${escapeQuotes(videoPath)}', ${clip.duration})">
+                                    <i class="fas fa-cut"></i> Export
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" onclick="playClipPreview(${index}, ${clip.start_time}, ${clip.end_time})">
+                                <i class="fas fa-play"></i> Preview
+                            </button>
+                        </div>
                     </div>
-                    <div class="clip-text">${clip.text}</div>
-                    <div class="clip-criteria">
-                        <div class="criterion">
-                            <span class="criterion-label">
-                                <i class="fas fa-hook"></i> Hook
-                            </span>
-                            <div class="criterion-bar">
-                                <div class="criterion-fill" style="width: ${clip.hook * 10}%"></div>
-                            </div>
-                            <span class="criterion-value">${clip.hook.toFixed(1)}</span>
+                    
+                    <div class="clip-details-section">
+                        <div class="clip-time">
+                            <i class="fas fa-clock"></i>
+                            ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}
+                            <span class="clip-duration">(${Math.round(clip.duration)}s)</span>
                         </div>
-                        <div class="criterion">
-                            <span class="criterion-label">
-                                <i class="fas fa-heart"></i> Emotion
-                            </span>
-                            <div class="criterion-bar">
-                                <div class="criterion-fill" style="width: ${clip.emotional_impact * 10}%"></div>
+                        <div class="clip-text">${clip.text}</div>
+                        <div class="clip-criteria">
+                            <div class="criterion">
+                                <span class="criterion-label">
+                                    <i class="fas fa-bullseye"></i> Hook
+                                </span>
+                                <div class="criterion-bar">
+                                    <div class="criterion-fill" style="width: ${clip.hook_quality * 10}%"></div>
+                                </div>
+                                <span class="criterion-value">${clip.hook_quality.toFixed(1)}</span>
                             </div>
-                            <span class="criterion-value">${clip.emotional_impact.toFixed(1)}</span>
-                        </div>
-                        <div class="criterion">
-                            <span class="criterion-label">
-                                <i class="fas fa-info-circle"></i> Info
-                            </span>
-                            <div class="criterion-bar">
-                                <div class="criterion-fill" style="width: ${clip.information_density * 10}%"></div>
+                            <div class="criterion">
+                                <span class="criterion-label">
+                                    <i class="fas fa-heart"></i> Emotion
+                                </span>
+                                <div class="criterion-bar">
+                                    <div class="criterion-fill" style="width: ${clip.emotional_impact * 10}%"></div>
+                                </div>
+                                <span class="criterion-value">${clip.emotional_impact.toFixed(1)}</span>
                             </div>
-                            <span class="criterion-value">${clip.information_density.toFixed(1)}</span>
-                        </div>
-                        <div class="criterion">
-                            <span class="criterion-label">
-                                <i class="fas fa-gauge-high"></i> Pacing
-                            </span>
-                            <div class="criterion-bar">
-                                <div class="criterion-fill" style="width: ${clip.pacing * 10}%"></div>
+                            <div class="criterion">
+                                <span class="criterion-label">
+                                    <i class="fas fa-info-circle"></i> Info
+                                </span>
+                                <div class="criterion-bar">
+                                    <div class="criterion-fill" style="width: ${clip.information_density * 10}%"></div>
+                                </div>
+                                <span class="criterion-value">${clip.information_density.toFixed(1)}</span>
                             </div>
-                            <span class="criterion-value">${clip.pacing.toFixed(1)}</span>
+                            <div class="criterion">
+                                <span class="criterion-label">
+                                    <i class="fas fa-gauge-high"></i> Pacing
+                                </span>
+                                <div class="criterion-bar">
+                                    <div class="criterion-fill" style="width: ${clip.pacing * 10}%"></div>
+                                </div>
+                                <span class="criterion-value">${clip.pacing.toFixed(1)}</span>
+                            </div>
                         </div>
+                        ${clip.reason ? `<div class="clip-reasoning"><strong>Analysis:</strong> ${clip.reason}</div>` : ''}
                     </div>
-                    ${clip.reasoning ? `<div class="clip-reasoning"><strong>Analysis:</strong> ${clip.reasoning}</div>` : ''}
                 </div>
             </div>
         `).join('');
+        
+        // Initialize video players to start at clip start time
+        clips.forEach((clip, index) => {
+            const video = document.getElementById(`video-${index}`);
+            if (video) {
+                video.currentTime = clip.start_time;
+            }
+        });
+    }
+    
+    function escapeQuotes(str) {
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+    
+    function playClipPreview(index, startTime, endTime) {
+        const video = document.getElementById(`video-${index}`);
+        const playBtn = document.querySelector(`#clip-${index} .play-btn i`);
+        
+        if (!video) return;
+        
+        // Set to start time
+        video.currentTime = startTime;
+        
+        // Play the clip
+        video.play();
+        playBtn.className = 'fas fa-pause';
+        
+        // Stop at end time
+        const checkTime = () => {
+            if (video.currentTime >= endTime) {
+                video.pause();
+                video.currentTime = startTime;
+                playBtn.className = 'fas fa-play';
+            } else if (!video.paused) {
+                requestAnimationFrame(checkTime);
+            }
+        };
+        
+        video.onplay = () => {
+            playBtn.className = 'fas fa-pause';
+            checkTime();
+        };
+        
+        video.onpause = () => {
+            playBtn.className = 'fas fa-play';
+        };
+    }
+    
+    function toggleFullscreen(index) {
+        const video = document.getElementById(`video-${index}`);
+        if (video) {
+            if (video.requestFullscreen) {
+                video.requestFullscreen();
+            } else if (video.webkitRequestFullscreen) {
+                video.webkitRequestFullscreen();
+            }
+        }
+    }
+    
+    async function generateClip(index, startTime, endTime, videoPath, clipDuration) {
+        const formatSelect = document.getElementById(`format-${index}`);
+        const durationSelect = document.getElementById(`duration-${index}`);
+        
+        const aspectRatio = formatSelect ? formatSelect.value : 'original';
+        const formatLabel = formatSelect ? formatSelect.options[formatSelect.selectedIndex].text : 'Original';
+        
+        // Get selected duration (0 means full clip)
+        let selectedDuration = durationSelect ? parseInt(durationSelect.value) : 0;
+        let actualEndTime = endTime;
+        
+        if (selectedDuration > 0 && selectedDuration < clipDuration) {
+            // Trim the clip to selected duration
+            actualEndTime = startTime + selectedDuration;
+        }
+        
+        const durationLabel = selectedDuration > 0 ? `${selectedDuration}s` : `Full (${Math.round(clipDuration)}s)`;
+        
+        showLoading(`Generating ${formatLabel} clip #${index + 1} (${durationLabel})...`);
+        
+        try {
+            const response = await fetch('/api/generate-clip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_path: videoPath,
+                    start_time: startTime,
+                    end_time: actualEndTime,
+                    clip_index: index + 1,
+                    aspect_ratio: aspectRatio,
+                    target_duration: selectedDuration > 0 ? selectedDuration : null
+                })
+            });
+            
+            const data = await response.json();
+            hideLoading();
+            
+            if (data.success) {
+                showToast(`Clip exported: ${data.filename}`, 'success');
+                
+                // Offer to download
+                if (confirm(`Clip saved to: ${data.clip_path}\n\nFormat: ${formatLabel}\nDuration: ${Math.round(data.duration)}s\n\nWould you like to open the clips folder?`)) {
+                    fetch('/api/open-clips-folder', { method: 'POST' });
+                }
+            } else {
+                showToast(data.error || 'Failed to generate clip', 'error');
+            }
+        } catch (error) {
+            hideLoading();
+            showToast('Error: ' + error.message, 'error');
+        }
     }
 
     function displayScoreDistribution(clips) {

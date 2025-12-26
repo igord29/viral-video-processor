@@ -29,6 +29,79 @@ app.config['SECRET_KEY'] = os.urandom(24)
 processing_status = {}
 analysis_results = {}
 
+# Create analysis results directory
+ANALYSIS_RESULTS_PATH = Path('analysis_results')
+ANALYSIS_RESULTS_PATH.mkdir(exist_ok=True)
+
+
+def save_analysis_results(task_id: str, data: dict, video_path: str):
+    """Save analysis results to disk."""
+    try:
+        # Create filename based on video name and task ID
+        video_name = Path(video_path).stem
+        safe_name = Config.get_safe_filename(video_name)[:50]
+        filename = f"{safe_name}_{task_id}.json"
+        filepath = ANALYSIS_RESULTS_PATH / filename
+        
+        # Add filepath to data
+        data['results_file'] = str(filepath)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+        
+        print(f"Analysis saved to: {filepath}")
+        return filepath
+    except Exception as e:
+        print(f"Error saving analysis: {e}")
+        return None
+
+
+def load_saved_analyses():
+    """Load all saved analysis results from disk."""
+    saved = {}
+    try:
+        for filepath in ANALYSIS_RESULTS_PATH.glob('*.json'):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    task_id = data.get('task_id', filepath.stem)
+                    saved[task_id] = data
+            except Exception as e:
+                print(f"Error loading {filepath}: {e}")
+    except Exception as e:
+        print(f"Error scanning analysis folder: {e}")
+    return saved
+
+
+def get_recent_analyses(limit: int = 20):
+    """Get list of recent analysis files."""
+    analyses = []
+    try:
+        files = sorted(ANALYSIS_RESULTS_PATH.glob('*.json'), 
+                      key=lambda x: x.stat().st_mtime, 
+                      reverse=True)[:limit]
+        
+        for filepath in files:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    analyses.append({
+                        'task_id': data.get('task_id', filepath.stem),
+                        'video_path': data.get('video_path', 'Unknown'),
+                        'clips_count': len(data.get('clips', [])),
+                        'analyzed_at': data.get('analyzed_at', 'Unknown'),
+                        'filename': filepath.name
+                    })
+            except:
+                pass
+    except:
+        pass
+    return analyses
+
+
+# Load existing analyses on startup
+analysis_results.update(load_saved_analyses())
+
 
 @app.route('/')
 def index():
@@ -231,7 +304,7 @@ def analyze_video():
                 processing_status[task_id]['progress'] = 90
                 
                 # Combine results
-                analysis_results[task_id] = {
+                analysis_data = {
                     'video_path': video_path,
                     'clips': clips,
                     'audio_spikes': audio_spikes or [],
@@ -240,8 +313,16 @@ def analyze_video():
                     'settings': {
                         'min_clip_duration': min_clip_duration,
                         'max_clip_duration': max_clip_duration
-                    }
+                    },
+                    'analyzed_at': datetime.now().isoformat(),
+                    'task_id': task_id
                 }
+                
+                # Store in memory
+                analysis_results[task_id] = analysis_data
+                
+                # Save to disk
+                save_analysis_results(task_id, analysis_data, video_path)
                 
                 processing_status[task_id] = {
                     'status': 'completed',
@@ -287,6 +368,19 @@ def get_results(task_id):
     """Get analysis results for a task."""
     results = analysis_results.get(task_id)
     
+    # Try loading from disk if not in memory
+    if not results:
+        for filepath in ANALYSIS_RESULTS_PATH.glob('*.json'):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('task_id') == task_id:
+                        results = data
+                        analysis_results[task_id] = data  # Cache it
+                        break
+            except:
+                pass
+    
     if not results:
         return jsonify({'error': 'Results not found'}), 404
     
@@ -294,6 +388,19 @@ def get_results(task_id):
         'success': True,
         'results': results
     })
+
+
+@app.route('/api/saved-analyses', methods=['GET'])
+def list_saved_analyses():
+    """List all saved analysis results."""
+    try:
+        analyses = get_recent_analyses(50)
+        return jsonify({
+            'success': True,
+            'analyses': analyses
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/search', methods=['POST'])
@@ -454,12 +561,15 @@ def generate_clip():
         output_filename = "_".join(parts) + ".mp4"
         output_path = Config.CLIPS_PATH / output_filename
         
-        # Extract clip using moviepy 2.x API
+        # Extract clip - handle both moviepy 1.x and 2.x
         video = VideoFileClip(video_path)
-        
-        # moviepy 2.x uses with_subclip or subclipped
         end_t = min(end_time, video.duration)
-        clip = video.with_subclip(start_time, end_t)
+        
+        # Try moviepy 2.x API first, fall back to 1.x
+        if hasattr(video, 'subclipped'):
+            clip = video.subclipped(start_time, end_t)
+        else:
+            clip = video.subclip(start_time, end_t)
         
         # Apply aspect ratio transformation if needed
         if aspect_ratio != 'original':
@@ -537,8 +647,11 @@ def apply_aspect_ratio(clip, aspect_ratio):
         x1 = x_center - new_width // 2
         x2 = x_center + new_width // 2
         
-        # moviepy 2.x uses with_crop
-        clip = clip.with_crop(x1=x1, x2=x2)
+        # Handle both moviepy 1.x and 2.x
+        if hasattr(clip, 'cropped'):
+            clip = clip.cropped(x1=x1, x2=x2)
+        else:
+            clip = clip.crop(x1=x1, x2=x2)
         
     else:
         # Target is wider - crop height (center crop)
@@ -547,8 +660,11 @@ def apply_aspect_ratio(clip, aspect_ratio):
         y1 = y_center - new_height // 2
         y2 = y_center + new_height // 2
         
-        # moviepy 2.x uses with_crop
-        clip = clip.with_crop(y1=y1, y2=y2)
+        # Handle both moviepy 1.x and 2.x
+        if hasattr(clip, 'cropped'):
+            clip = clip.cropped(y1=y1, y2=y2)
+        else:
+            clip = clip.crop(y1=y1, y2=y2)
     
     # Resize to standard dimensions based on aspect ratio
     standard_sizes = {
@@ -561,8 +677,11 @@ def apply_aspect_ratio(clip, aspect_ratio):
     
     if aspect_ratio in standard_sizes:
         target_w, target_h = standard_sizes[aspect_ratio]
-        # moviepy 2.x uses resized()
-        clip = clip.resized(newsize=(target_w, target_h))
+        # Handle both moviepy 1.x and 2.x
+        if hasattr(clip, 'resized'):
+            clip = clip.resized(newsize=(target_w, target_h))
+        else:
+            clip = clip.resize(newsize=(target_w, target_h))
     
     return clip
 

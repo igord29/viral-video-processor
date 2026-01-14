@@ -412,6 +412,9 @@ def search_videos():
         max_results = data.get('max_results', 10)
         platform = data.get('platform', 'youtube')
         content_type = data.get('content_type', 'all')
+        min_views = data.get('min_views', 50000)  # Default 50k minimum views
+        date_filter = data.get('date_filter', 'month')  # Default last month
+        sort_by = data.get('sort_by', 'viral_score')  # Default sort by viral score
         
         if not query:
             return jsonify({'error': 'Search query is required'}), 400
@@ -421,14 +424,44 @@ def search_videos():
             query, 
             max_results=max_results,
             platform=platform,
-            content_type=content_type
+            content_type=content_type,
+            min_views=min_views,
+            date_filter=date_filter,
+            sort_by=sort_by
         )
         
         return jsonify({
             'success': True,
             'results': results,
             'platform': platform,
-            'query': query
+            'query': query,
+            'filters': {
+                'min_views': min_views,
+                'date_filter': date_filter,
+                'sort_by': sort_by
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/trending', methods=['GET'])
+def get_trending():
+    """Get trending videos without a specific query."""
+    try:
+        category = request.args.get('category', 'all')
+        max_results = int(request.args.get('max_results', 10))
+        
+        downloader = VideoDownloader()
+        results = downloader.search_trending_topics(
+            category=category,
+            max_results=max_results
+        )
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'category': category
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

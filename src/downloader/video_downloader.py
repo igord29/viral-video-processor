@@ -139,45 +139,64 @@ class VideoDownloader:
 
         return is_viral
 
-    def search_viral_videos(self, query: str, max_results: int = 10, platform: str = 'youtube', content_type: str = 'all') -> list:
+    def search_viral_videos(
+        self, 
+        query: str, 
+        max_results: int = 10, 
+        platform: str = 'youtube', 
+        content_type: str = 'all',
+        min_views: int = 50000,
+        date_filter: str = 'month',
+        sort_by: str = 'views'
+    ) -> list:
         """
-        Search for viral videos on various platforms.
+        Search for viral/trending videos on various platforms.
 
         Args:
             query: Search query
             max_results: Maximum number of results to return
             platform: Platform to search ('youtube', 'youtube_shorts', 'tiktok', 'twitch')
             content_type: Type of content ('all', 'shorts', 'long')
+            min_views: Minimum view count to be considered viral (default 50k)
+            date_filter: Time range ('day', 'week', 'month', 'year', 'all')
+            sort_by: Sort method ('views', 'rating', 'date', 'relevance')
 
         Returns:
-            List of video information dictionaries
+            List of video information dictionaries sorted by virality
         """
-        # Build search URL based on platform
+        from datetime import datetime, timedelta
+        
+        # Build viral-optimized search query based on platform
+        viral_modifiers = []
+        
         if platform == 'youtube_shorts':
-            # Search for YouTube Shorts specifically
+            viral_modifiers = ['#shorts', 'viral', 'trending']
             search_query = f"{query} #shorts"
-            search_url = f"ytsearch{max_results}:{search_query}"
         elif platform == 'tiktok':
-            # TikTok search (limited support - searches via hashtag on YouTube)
-            # Note: Direct TikTok search requires different approach
-            search_query = f"{query} tiktok viral"
-            search_url = f"ytsearch{max_results}:{search_query}"
+            viral_modifiers = ['tiktok', 'viral', 'trending', 'fyp']
+            search_query = f"{query} tiktok viral trending"
         elif platform == 'twitch':
-            # Search for Twitch clips on YouTube (Twitch doesn't have public search API)
-            search_query = f"{query} twitch clip"
-            search_url = f"ytsearch{max_results}:{search_query}"
+            viral_modifiers = ['twitch', 'clip', 'highlights', 'best moments']
+            search_query = f"{query} twitch clip viral"
         else:
-            # Default YouTube search
-            search_url = f"ytsearch{max_results}:{query}"
+            # For general YouTube, add viral keywords to boost trending results
+            viral_modifiers = ['viral', 'trending', 'popular']
+            search_query = f"{query} viral trending"
+        
+        # Search for more results initially to filter for viral content
+        # We'll request 3x the desired results to ensure we have enough after filtering
+        fetch_count = max_results * 3
+        search_url = f"ytsearch{fetch_count}:{search_query}"
 
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'extract_flat': True,
+            'ignoreerrors': True,
         }
 
         try:
-            print_info(f"Searching {platform} for: {query}")
+            print_info(f"Searching {platform} for viral content: {query}")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 result = ydl.extract_info(search_url, download=False)
@@ -185,29 +204,156 @@ class VideoDownloader:
                 videos = []
                 if 'entries' in result:
                     for entry in result['entries']:
-                        if entry:
+                        if not entry:
+                            continue
+                        
+                        try:
                             # Get full info for each video
-                            video_url = f"https://www.youtube.com/watch?v={entry['id']}"
+                            video_id = entry.get('id')
+                            if not video_id:
+                                continue
+                                
+                            video_url = f"https://www.youtube.com/watch?v={video_id}"
                             info = self.get_video_info(video_url)
-                            if info:
-                                info['platform'] = platform
-                                info['search_query'] = query
+                            
+                            if not info:
+                                continue
+                            
+                            # Get metrics
+                            views = info.get('view_count', 0) or 0
+                            likes = info.get('like_count', 0) or 0
+                            duration = info.get('duration', 0) or 0
+                            upload_date_str = info.get('upload_date', '')
+                            
+                            # Skip videos below minimum view threshold
+                            if views < min_views:
+                                continue
+                            
+                            # Filter by content type
+                            if content_type == 'shorts' and duration > 60:
+                                continue
+                            if content_type == 'long' and duration < 60:
+                                continue
+                            
+                            # Filter by date if specified
+                            if date_filter != 'all' and upload_date_str:
+                                try:
+                                    upload_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                                    now = datetime.now()
+                                    
+                                    if date_filter == 'day' and (now - upload_date).days > 1:
+                                        continue
+                                    elif date_filter == 'week' and (now - upload_date).days > 7:
+                                        continue
+                                    elif date_filter == 'month' and (now - upload_date).days > 30:
+                                        continue
+                                    elif date_filter == 'year' and (now - upload_date).days > 365:
+                                        continue
+                                except:
+                                    pass  # If date parsing fails, include the video
+                            
+                            # Calculate viral score for ranking
+                            engagement_rate = (likes / views * 100) if views > 0 else 0
+                            
+                            # Calculate views per day (velocity indicator)
+                            views_per_day = views
+                            if upload_date_str:
+                                try:
+                                    upload_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                                    days_since_upload = max((datetime.now() - upload_date).days, 1)
+                                    views_per_day = views / days_since_upload
+                                except:
+                                    pass
+                            
+                            # Viral score combines views, engagement, and velocity
+                            viral_score = (
+                                (views / 1000) * 0.3 +  # Base view weight
+                                (engagement_rate * 100) * 0.3 +  # Engagement weight
+                                (views_per_day / 1000) * 0.4  # Velocity weight (trending factor)
+                            )
+                            
+                            info['platform'] = platform
+                            info['search_query'] = query
+                            info['viral_score'] = round(viral_score, 2)
+                            info['engagement_rate'] = round(engagement_rate, 2)
+                            info['views_per_day'] = int(views_per_day)
+                            info['is_viral'] = self.is_viral(info, min_views=min_views)
+                            info['is_trending'] = views_per_day >= 10000  # 10k+ views/day = trending
+                            info['url'] = video_url
+                            
+                            videos.append(info)
+                            
+                            # Stop fetching if we have enough viral videos
+                            if len(videos) >= max_results:
+                                break
                                 
-                                # Filter by content type if specified
-                                duration = info.get('duration', 0)
-                                if content_type == 'shorts' and duration > 60:
-                                    continue  # Skip long videos when searching for shorts
-                                if content_type == 'long' and duration < 60:
-                                    continue  # Skip short videos when searching for long content
-                                
-                                videos.append(info)
+                        except Exception as e:
+                            print_error(f"Error processing video: {str(e)}")
+                            continue
 
-                # Sort by view count
-                videos.sort(key=lambda x: x.get('view_count', 0), reverse=True)
+                # Sort videos based on selected criteria
+                if sort_by == 'views':
+                    videos.sort(key=lambda x: x.get('view_count', 0), reverse=True)
+                elif sort_by == 'engagement':
+                    videos.sort(key=lambda x: x.get('engagement_rate', 0), reverse=True)
+                elif sort_by == 'velocity':
+                    videos.sort(key=lambda x: x.get('views_per_day', 0), reverse=True)
+                else:  # Default: sort by viral_score (combines views, engagement, velocity)
+                    videos.sort(key=lambda x: x.get('viral_score', 0), reverse=True)
 
-                print_success(f"Found {len(videos)} videos on {platform}")
+                # Limit to requested number
+                videos = videos[:max_results]
+
+                print_success(f"Found {len(videos)} viral videos on {platform}")
                 return videos
 
         except Exception as e:
             print_error(f"Search failed: {str(e)}")
             return []
+    
+    def search_trending_topics(self, category: str = 'all', max_results: int = 10) -> list:
+        """
+        Search for currently trending videos without a specific query.
+        Finds what's hot right now on YouTube.
+        
+        Args:
+            category: Category filter ('all', 'music', 'gaming', 'entertainment', 'news')
+            max_results: Maximum number of results
+            
+        Returns:
+            List of trending video information
+        """
+        # Trending search queries by category
+        trending_searches = {
+            'all': ['viral today', 'trending now', 'going viral 2024'],
+            'music': ['viral music', 'trending song', 'new hit song'],
+            'gaming': ['viral gaming clip', 'gaming highlights', 'epic gaming moment'],
+            'entertainment': ['viral video', 'trending entertainment', 'must watch'],
+            'news': ['breaking news viral', 'trending news today'],
+        }
+        
+        search_terms = trending_searches.get(category, trending_searches['all'])
+        all_videos = []
+        
+        for term in search_terms:
+            videos = self.search_viral_videos(
+                query=term,
+                max_results=max_results // len(search_terms) + 1,
+                min_views=100000,  # Higher threshold for trending
+                date_filter='week',  # Recent content only
+                sort_by='viral_score'
+            )
+            all_videos.extend(videos)
+        
+        # Deduplicate by video ID
+        seen_ids = set()
+        unique_videos = []
+        for video in all_videos:
+            vid_id = video.get('id')
+            if vid_id and vid_id not in seen_ids:
+                seen_ids.add(vid_id)
+                unique_videos.append(video)
+        
+        # Sort by viral score and limit
+        unique_videos.sort(key=lambda x: x.get('viral_score', 0), reverse=True)
+        return unique_videos[:max_results]

@@ -25,6 +25,26 @@ app = Flask(__name__,
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 app.config['SECRET_KEY'] = os.urandom(24)
 
+
+def get_static_version():
+    static_root = Path(app.static_folder)
+    candidates = [
+        static_root / 'css' / 'style.css',
+        static_root / 'js' / 'main.js'
+    ]
+    mtimes = [int(path.stat().st_mtime) for path in candidates if path.exists()]
+    if mtimes:
+        return str(max(mtimes))
+    return str(int(datetime.utcnow().timestamp()))
+
+
+app.config['STATIC_VERSION'] = get_static_version()
+
+
+@app.context_processor
+def inject_static_version():
+    return {'static_version': app.config['STATIC_VERSION']}
+
 # Store processing status
 processing_status = {}
 analysis_results = {}

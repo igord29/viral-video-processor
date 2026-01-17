@@ -18,14 +18,17 @@
             <!-- Action Bar -->
             <div class="card">
                 <div class="card-body" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                    <div style="display: flex; gap: 1rem; align-items: center;">
-                        <span id="video-count" style="color: var(--text-muted);">0 videos</span>
+                    <div class="status-meta">
+                        <span id="video-count">0 videos</span>
+                        <span class="status-dot"></span>
+                        <span class="status-label">Last refresh</span>
+                        <span id="refresh-latency">--</span>
                     </div>
                     <div style="display: flex; gap: 0.75rem;">
-                        <button class="btn btn-secondary" onclick="openDownloadsFolder()">
+                        <button class="btn btn-secondary" id="open-folder-btn">
                             <i class="fas fa-folder-open"></i> Open Folder
                         </button>
-                        <button class="btn btn-secondary" onclick="refreshVideos()">
+                        <button class="btn btn-secondary" id="refresh-btn">
                             <i class="fas fa-sync-alt"></i> Refresh
                         </button>
                         <a href="{{ url_for('download_page') }}" class="btn btn-primary">
@@ -85,7 +88,7 @@
                 </div>
                 <div class="card-body">
                     <div class="action-buttons">
-                        <button class="action-btn" onclick="openDownloadsFolder()">
+                        <button class="action-btn" data-action="open-folder">
                             <i class="fas fa-folder-open"></i>
                             <span>Open in Explorer</span>
                         </button>
@@ -132,7 +135,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3 id="modal-title">Video Preview</h3>
-            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <button class="modal-close" data-action="close-modal">&times;</button>
         </div>
         <div class="modal-body">
             <video id="video-player" controls style="width: 100%; max-height: 60vh;">
@@ -140,8 +143,8 @@
             </video>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-            <button class="btn btn-primary" id="analyze-btn" onclick="analyzeCurrentVideo()">
+            <button class="btn btn-secondary" data-action="close-modal">Close</button>
+            <button class="btn btn-primary" id="analyze-btn">
                 <i class="fas fa-chart-line"></i> Analyze
             </button>
         </div>
@@ -324,197 +327,9 @@
 }
 </style>
 
-<script>
-    let currentVideoPath = null;
+{% endblock %}
 
-    document.addEventListener('DOMContentLoaded', function() {
-        loadVideos();
-        loadConfig();
-    });
-
-    async function loadConfig() {
-        try {
-            const response = await fetch('/api/config');
-            const data = await response.json();
-            
-            document.getElementById('downloads-path').textContent = data.download_path || 'Not set';
-            document.getElementById('videos-path').textContent = data.video_path || 'Not set';
-        } catch (error) {
-            console.error('Error loading config:', error);
-        }
-    }
-
-    async function loadVideos() {
-        try {
-            const response = await fetch('/api/videos');
-            const data = await response.json();
-            
-            const container = document.getElementById('videos-list');
-            
-            if (data.videos && data.videos.length > 0) {
-                document.getElementById('video-count').textContent = `${data.videos.length} video${data.videos.length !== 1 ? 's' : ''}`;
-                
-                container.innerHTML = data.videos.map(video => `
-                    <div class="video-card" onclick="previewVideo('${escapeHtml(video.name)}', '${escapeHtml(video.path)}')">
-                        <div class="video-icon">
-                            <i class="fas fa-play"></i>
-                        </div>
-                        <div class="video-details">
-                            <div class="video-title" title="${escapeHtml(video.name)}">${escapeHtml(video.name)}</div>
-                            <div class="video-meta">
-                                <span><i class="fas fa-hdd"></i> ${formatFileSize(video.size)}</span>
-                                <span><i class="fas fa-clock"></i> ${formatDate(video.modified)}</span>
-                                <span><i class="fas fa-folder"></i> ${video.folder}</span>
-                            </div>
-                        </div>
-                        <div class="video-actions" onclick="event.stopPropagation();">
-                            <button class="btn btn-sm btn-primary" onclick="analyzeVideo('${escapeHtml(video.path)}')" title="Analyze for viral clips">
-                                <i class="fas fa-chart-line"></i>
-                            </button>
-                            <button class="btn btn-sm btn-secondary" onclick="previewVideo('${escapeHtml(video.name)}', '${escapeHtml(video.path)}')" title="Preview video">
-                                <i class="fas fa-play"></i>
-                            </button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteVideo('${escapeHtml(video.path)}', '${escapeHtml(video.name)}')" title="Delete video" style="background: var(--error-color);">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                document.getElementById('video-count').textContent = '0 videos';
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-video-slash"></i>
-                        <h3>No Videos Yet</h3>
-                        <p>Download some videos to see them here</p>
-                        <a href="{{ url_for('download_page') }}" class="btn btn-primary">
-                            <i class="fas fa-download"></i> Download Video
-                        </a>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            console.error('Error loading videos:', error);
-            document.getElementById('videos-list').innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <h3>Error Loading Videos</h3>
-                    <p>${error.message}</p>
-                </div>
-            `;
-        }
-    }
-
-    function previewVideo(name, path) {
-        currentVideoPath = path;
-        document.getElementById('modal-title').textContent = name;
-        
-        // Extract just the filename for the video src
-        const filename = path.split(/[\\/]/).pop();
-        document.getElementById('video-player').src = `/api/video/${encodeURIComponent(filename)}`;
-        
-        document.getElementById('video-modal').style.display = 'flex';
-    }
-
-    function closeModal() {
-        document.getElementById('video-modal').style.display = 'none';
-        document.getElementById('video-player').pause();
-        document.getElementById('video-player').src = '';
-        currentVideoPath = null;
-    }
-
-    function analyzeCurrentVideo() {
-        if (currentVideoPath) {
-            analyzeVideo(currentVideoPath);
-        }
-    }
-
-    function analyzeVideo(videoPath) {
-        localStorage.setItem('videoPath', videoPath);
-        window.location.href = '{{ url_for("analyze_page") }}';
-    }
-
-    async function deleteVideo(path, name) {
-        if (!confirm(`Are you sure you want to delete "${name}"?`)) {
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/delete-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                showToast('Video deleted successfully', 'success');
-                loadVideos();
-            } else {
-                showToast(data.error || 'Failed to delete video', 'error');
-            }
-        } catch (error) {
-            showToast('Error: ' + error.message, 'error');
-        }
-    }
-
-    async function openDownloadsFolder() {
-        try {
-            const response = await fetch('/api/open-folder', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                showToast('Folder opened in Explorer', 'success');
-            } else {
-                showToast(data.error || 'Failed to open folder', 'error');
-            }
-        } catch (error) {
-            showToast('Error: ' + error.message, 'error');
-        }
-    }
-
-    function refreshVideos() {
-        loadVideos();
-        showToast('Videos refreshed', 'success');
-    }
-
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function formatDate(timestamp) {
-        const date = new Date(timestamp * 1000);
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML.replace(/'/g, "\\'").replace(/"/g, '\\"');
-    }
-
-    // Close modal on escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            closeModal();
-        }
-    });
-
-    // Close modal on background click
-    document.getElementById('video-modal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeModal();
-        }
-    });
-</script>
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/pages/videos.js') }}?v={{ static_version }}"></script>
 {% endblock %}
 

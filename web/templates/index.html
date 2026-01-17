@@ -10,7 +10,7 @@
             Welcome to Viral Video Processor
         </h1>
         <p class="hero-subtitle">
-            AI-powered video analysis to identify the most engaging moments in your content
+            Turn long videos into short wins with clarity and confidence
         </p>
     </div>
 
@@ -21,7 +21,7 @@
                 <i class="fas fa-download"></i>
             </div>
             <h3>Download Video</h3>
-            <p>Download videos from YouTube, TikTok, and more</p>
+            <p>Bring your content in and get to work fast</p>
             <div class="action-button">
                 Get Started <i class="fas fa-arrow-right"></i>
             </div>
@@ -32,7 +32,7 @@
                 <i class="fas fa-chart-line"></i>
             </div>
             <h3>Analyze Video</h3>
-            <p>AI-powered engagement analysis to find viral moments</p>
+            <p>Find the moments that earn attention, not just views</p>
             <div class="action-button">
                 Analyze Now <i class="fas fa-arrow-right"></i>
             </div>
@@ -43,10 +43,43 @@
                 <i class="fas fa-film"></i>
             </div>
             <h3>View Results</h3>
-            <p>Browse analysis results and generate clips</p>
+            <p>Review your best opportunities in one place</p>
             <div class="action-button">
                 View Results <i class="fas fa-arrow-right"></i>
             </div>
+        </div>
+    </div>
+
+    <!-- Workflow Section -->
+    <div class="workflow-section">
+        <h2 class="section-title">
+            <i class="fas fa-route"></i>
+            Start Strong
+        </h2>
+        <div class="workflow-steps">
+            <div class="workflow-step">
+                <div class="step-number">1</div>
+                <h4>Bring in the video</h4>
+                <p>Start with a link and get your content ready for review.</p>
+            </div>
+            <div class="workflow-step">
+                <div class="step-number">2</div>
+                <h4>Find the moments</h4>
+                <p>Spot the segments that earn attention and keep it.</p>
+            </div>
+            <div class="workflow-step">
+                <div class="step-number">3</div>
+                <h4>Review and decide</h4>
+                <p>Keep the strongest clips and move on with confidence.</p>
+            </div>
+        </div>
+        <div class="workflow-actions">
+            <a href="{{ url_for('download_page') }}" class="btn btn-primary">
+                Start your first video
+            </a>
+            <a href="{{ url_for('videos_page') }}" class="btn btn-secondary">
+                View your library
+            </a>
         </div>
     </div>
 
@@ -63,7 +96,7 @@
                     <i class="fas fa-brain"></i>
                 </div>
                 <h4>AI-Powered Analysis</h4>
-                <p>Uses Claude API to analyze engagement potential based on hook quality, emotional impact, and pacing</p>
+                <p>Insight that points to what matters most</p>
             </div>
 
             <div class="feature-item">
@@ -71,7 +104,7 @@
                     <i class="fas fa-closed-captioning"></i>
                 </div>
                 <h4>Auto Transcription</h4>
-                <p>OpenAI Whisper integration for accurate word-level timestamps</p>
+                <p>Clear words, clearer decisions</p>
             </div>
 
             <div class="feature-item">
@@ -79,7 +112,7 @@
                     <i class="fas fa-wave-square"></i>
                 </div>
                 <h4>Audio Spike Detection</h4>
-                <p>Identifies exciting moments through audio energy analysis</p>
+                <p>Listen once, spot the spikes</p>
             </div>
 
             <div class="feature-item">
@@ -87,7 +120,7 @@
                     <i class="fas fa-cut"></i>
                 </div>
                 <h4>Smart Clip Detection</h4>
-                <p>Automatically finds clips between 15-60 seconds with high viral potential</p>
+                <p>Cut faster, choose smarter</p>
             </div>
 
             <div class="feature-item">
@@ -95,7 +128,7 @@
                     <i class="fas fa-globe"></i>
                 </div>
                 <h4>Multi-Platform Support</h4>
-                <p>Download from YouTube, TikTok, Twitch, and other platforms</p>
+                <p>Your content, no matter where it lives</p>
             </div>
 
             <div class="feature-item">
@@ -103,8 +136,18 @@
                     <i class="fas fa-ranking-star"></i>
                 </div>
                 <h4>Engagement Scoring</h4>
-                <p>Each clip rated on hook quality, emotion, information, and pacing</p>
+                <p>Prioritize the clips that deserve your time</p>
             </div>
+        </div>
+    </div>
+
+    <div class="trust-strip">
+        <div class="trust-icon">
+            <i class="fas fa-lock"></i>
+        </div>
+        <div class="trust-content">
+            <h3>Private by default</h3>
+            <p>Your files stay on your machine. You control what gets reviewed and what gets exported.</p>
         </div>
     </div>
 
@@ -112,7 +155,7 @@
     <div class="stats-section">
         <h2 class="section-title">
             <i class="fas fa-chart-pie"></i>
-            System Status
+            System Snapshot
         </h2>
         
         <div class="stats-grid" id="stats-grid">
@@ -128,23 +171,22 @@
 
             <div class="stat-card">
                 <div class="stat-icon">
-                    <i class="fas fa-key"></i>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-value" id="api-status">
-                        <i class="fas fa-spinner fa-spin"></i>
-                    </div>
-                    <div class="stat-label">API Status</div>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
                     <i class="fas fa-clock"></i>
                 </div>
                 <div class="stat-info">
                     <div class="stat-value">15-60s</div>
                     <div class="stat-label">Clip Duration</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-value" id="refresh-latency">--</div>
+                    <div class="stat-label">Last Refresh</div>
+                    <div class="stat-caption" id="refresh-time">--</div>
                 </div>
             </div>
 
@@ -175,99 +217,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
-<script>
-    // Load stats on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        loadConfig();
-        loadRecentVideos();
-    });
-
-    async function loadConfig() {
-        try {
-            const response = await fetch('/api/config');
-            const data = await response.json();
-            
-            document.getElementById('api-status').innerHTML = 
-                data.has_anthropic_key 
-                ? '<i class="fas fa-check-circle" style="color: #10b981;"></i>' 
-                : '<i class="fas fa-times-circle" style="color: #ef4444;"></i>';
-            
-            document.getElementById('top-clips').textContent = data.top_n_clips;
-        } catch (error) {
-            console.error('Error loading config:', error);
-        }
-    }
-
-    async function loadRecentVideos() {
-        try {
-            const response = await fetch('/api/videos');
-            const data = await response.json();
-            
-            const container = document.getElementById('recent-videos');
-            
-            if (data.videos && data.videos.length > 0) {
-                document.getElementById('video-count').textContent = data.videos.length;
-                
-                const recentVideos = data.videos.slice(0, 5);
-                container.innerHTML = recentVideos.map(video => `
-                    <div class="video-item">
-                        <i class="fas fa-file-video"></i>
-                        <div class="video-info">
-                            <div class="video-name">${video.name}</div>
-                            <div class="video-meta">
-                                ${formatFileSize(video.size)} • ${formatDate(video.modified)}
-                            </div>
-                        </div>
-                        <button class="btn-analyze" onclick="analyzeVideo('${video.path}')">
-                            <i class="fas fa-chart-line"></i> Analyze
-                        </button>
-                    </div>
-                `).join('');
-            } else {
-                document.getElementById('video-count').textContent = '0';
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-inbox"></i>
-                        <p>No videos yet. Start by downloading a video!</p>
-                        <a href="${'{{ url_for("download_page") }}'}" class="btn-primary">
-                            <i class="fas fa-download"></i> Download Video
-                        </a>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            console.error('Error loading videos:', error);
-            document.getElementById('video-count').textContent = '0';
-        }
-    }
-
-    function analyzeVideo(videoPath) {
-        localStorage.setItem('videoPath', videoPath);
-        window.location.href = '{{ url_for("analyze_page") }}';
-    }
-
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function formatDate(timestamp) {
-        const date = new Date(timestamp * 1000);
-        const now = new Date();
-        const diff = now - date;
-        
-        const minutes = Math.floor(diff / 60000);
-        const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
-        
-        if (minutes < 60) return `${minutes}m ago`;
-        if (hours < 24) return `${hours}h ago`;
-        if (days < 7) return `${days}d ago`;
-        return date.toLocaleDateString();
-    }
-</script>
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/pages/index.js') }}?v={{ static_version }}"></script>
 {% endblock %}

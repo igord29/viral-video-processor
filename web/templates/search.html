@@ -9,7 +9,7 @@
             <i class="fas fa-search"></i>
             Search Viral Videos
         </h1>
-        <p>Find trending videos across platforms</p>
+        <p>Find trending videos on YouTube</p>
     </div>
 
     <div class="content-grid">
@@ -40,13 +40,8 @@
                                     <button class="platform-btn" data-platform="youtube_shorts" onclick="selectPlatform('youtube_shorts')">
                                         <i class="fas fa-mobile-alt"></i> YT Shorts
                                     </button>
-                                    <button class="platform-btn" data-platform="tiktok" onclick="selectPlatform('tiktok')">
-                                        <i class="fab fa-tiktok"></i> TikTok Style
-                                    </button>
-                                    <button class="platform-btn" data-platform="twitch" onclick="selectPlatform('twitch')">
-                                        <i class="fab fa-twitch"></i> Twitch Clips
-                                    </button>
                                 </div>
+                                <small class="form-help">Shorts refers to the YouTube vertical format, not other platforms.</small>
                             </div>
                             
                             <div class="filter-group">
@@ -345,8 +340,6 @@
 }
 
 .fab.fa-youtube { color: #FF0000; }
-.fab.fa-tiktok { color: #69C9D0; }
-.fab.fa-twitch { color: #9146FF; }
 .platform-btn.active .fab { color: inherit; }
 
 .results-badge {
@@ -696,7 +689,7 @@
                 <div class="empty-state">
                     <i class="fas fa-search" style="font-size: 3rem; opacity: 0.3; margin-bottom: 1rem;"></i>
                     <p>No videos found for "${query}"</p>
-                    <p class="text-muted">Try different keywords or change the platform</p>
+                    <p class="text-muted">Try different keywords or change the format</p>
                 </div>
             `;
         } else {

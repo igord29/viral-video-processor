@@ -1,6 +1,7 @@
 """Video downloader using yt-dlp."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 import yt_dlp
@@ -139,15 +140,29 @@ class VideoDownloader:
 
         return is_viral
 
+    def _normalize_thumbnail(self, thumbnail) -> str:
+        """Normalize thumbnail field to a URL string."""
+        if isinstance(thumbnail, str):
+            return thumbnail
+        if isinstance(thumbnail, dict):
+            return thumbnail.get('url', '')
+        if isinstance(thumbnail, list) and thumbnail:
+            first = thumbnail[0]
+            if isinstance(first, str):
+                return first
+            if isinstance(first, dict):
+                return first.get('url', '')
+        return ''
+
     def search_viral_videos(
-        self, 
-        query: str, 
-        max_results: int = 10, 
-        platform: str = 'youtube', 
+        self,
+        query: str,
+        max_results: int = 10,
+        platform: str = 'youtube',
         content_type: str = 'all',
         min_views: int = 50000,
         date_filter: str = 'month',
-        sort_by: str = 'views'
+        sort_by: str = 'viral_score'
     ) -> list:
         """
         Search for viral/trending videos on various platforms.
@@ -157,35 +172,26 @@ class VideoDownloader:
             max_results: Maximum number of results to return
             platform: Platform to search ('youtube', 'youtube_shorts', 'tiktok', 'twitch')
             content_type: Type of content ('all', 'shorts', 'long')
-            min_views: Minimum view count to be considered viral (default 50k)
+            min_views: View count threshold to mark a result as viral (default 50k)
             date_filter: Time range ('day', 'week', 'month', 'year', 'all')
-            sort_by: Sort method ('views', 'rating', 'date', 'relevance')
+            sort_by: Sort method ('viral_score', 'velocity', 'views', 'engagement')
 
         Returns:
             List of video information dictionaries sorted by virality
         """
-        from datetime import datetime, timedelta
-        
-        # Build viral-optimized search query based on platform
-        viral_modifiers = []
-        
+        # Build search query based on platform without forcing "viral/trending" keywords
         if platform == 'youtube_shorts':
-            viral_modifiers = ['#shorts', 'viral', 'trending']
             search_query = f"{query} #shorts"
         elif platform == 'tiktok':
-            viral_modifiers = ['tiktok', 'viral', 'trending', 'fyp']
-            search_query = f"{query} tiktok viral trending"
+            # TikTok-style content on YouTube (TikTok has no public search API)
+            search_query = f"{query} tiktok"
         elif platform == 'twitch':
-            viral_modifiers = ['twitch', 'clip', 'highlights', 'best moments']
-            search_query = f"{query} twitch clip viral"
+            search_query = f"{query} twitch clip"
         else:
-            # For general YouTube, add viral keywords to boost trending results
-            viral_modifiers = ['viral', 'trending', 'popular']
-            search_query = f"{query} viral trending"
-        
-        # Search for more results initially to filter for viral content
-        # We'll request 3x the desired results to ensure we have enough after filtering
-        fetch_count = max_results * 3
+            search_query = query
+
+        # Fetch more results to allow better ranking and avoid sparse output
+        fetch_count = min(max_results * 8, 80)
         search_url = f"ytsearch{fetch_count}:{search_query}"
 
         ydl_opts = {
@@ -208,39 +214,47 @@ class VideoDownloader:
                             continue
                         
                         try:
-                            # Get full info for each video
                             video_id = entry.get('id')
                             if not video_id:
                                 continue
-                                
                             video_url = f"https://www.youtube.com/watch?v={video_id}"
-                            info = self.get_video_info(video_url)
-                            
-                            if not info:
-                                continue
-                            
+
+                            # Use flat entry data when available; fallback to full info when needed
+                            info = {
+                                'title': entry.get('title', 'Unknown'),
+                                'channel': entry.get('uploader', entry.get('channel', 'Unknown')),
+                                'duration': entry.get('duration', 0),
+                                'view_count': entry.get('view_count', 0),
+                                'like_count': entry.get('like_count', 0),
+                                'upload_date': entry.get('upload_date', ''),
+                                'webpage_url': entry.get('url', video_url),
+                                'id': video_id,
+                                'thumbnail': self._normalize_thumbnail(entry.get('thumbnail', '')),
+                            }
+
+                            if not info.get('view_count') or not info.get('duration'):
+                                full_info = self.get_video_info(video_url)
+                                if full_info:
+                                    info.update(full_info)
+
                             # Get metrics
                             views = info.get('view_count', 0) or 0
                             likes = info.get('like_count', 0) or 0
                             duration = info.get('duration', 0) or 0
                             upload_date_str = info.get('upload_date', '')
-                            
-                            # Skip videos below minimum view threshold
-                            if views < min_views:
-                                continue
-                            
+
                             # Filter by content type
                             if content_type == 'shorts' and duration > 60:
                                 continue
                             if content_type == 'long' and duration < 60:
                                 continue
-                            
+
                             # Filter by date if specified
                             if date_filter != 'all' and upload_date_str:
                                 try:
                                     upload_date = datetime.strptime(upload_date_str, '%Y%m%d')
                                     now = datetime.now()
-                                    
+
                                     if date_filter == 'day' and (now - upload_date).days > 1:
                                         continue
                                     elif date_filter == 'week' and (now - upload_date).days > 7:
@@ -249,43 +263,40 @@ class VideoDownloader:
                                         continue
                                     elif date_filter == 'year' and (now - upload_date).days > 365:
                                         continue
-                                except:
+                                except Exception:
                                     pass  # If date parsing fails, include the video
-                            
+
                             # Calculate viral score for ranking
                             engagement_rate = (likes / views * 100) if views > 0 else 0
-                            
+
                             # Calculate views per day (velocity indicator)
-                            views_per_day = views
+                            days_since_upload = None
+                            views_per_day = 0
                             if upload_date_str:
                                 try:
                                     upload_date = datetime.strptime(upload_date_str, '%Y%m%d')
                                     days_since_upload = max((datetime.now() - upload_date).days, 1)
                                     views_per_day = views / days_since_upload
-                                except:
-                                    pass
-                            
+                                except Exception:
+                                    days_since_upload = None
+
                             # Viral score combines views, engagement, and velocity
                             viral_score = (
                                 (views / 1000) * 0.3 +  # Base view weight
                                 (engagement_rate * 100) * 0.3 +  # Engagement weight
                                 (views_per_day / 1000) * 0.4  # Velocity weight (trending factor)
                             )
-                            
+
                             info['platform'] = platform
                             info['search_query'] = query
                             info['viral_score'] = round(viral_score, 2)
                             info['engagement_rate'] = round(engagement_rate, 2)
-                            info['views_per_day'] = int(views_per_day)
+                            info['views_per_day'] = int(views_per_day) if views_per_day else 0
                             info['is_viral'] = self.is_viral(info, min_views=min_views)
-                            info['is_trending'] = views_per_day >= 10000  # 10k+ views/day = trending
+                            info['is_trending'] = days_since_upload is not None and views_per_day >= 10000
                             info['url'] = video_url
-                            
+
                             videos.append(info)
-                            
-                            # Stop fetching if we have enough viral videos
-                            if len(videos) >= max_results:
-                                break
                                 
                         except Exception as e:
                             print_error(f"Error processing video: {str(e)}")

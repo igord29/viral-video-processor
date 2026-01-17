@@ -157,7 +157,7 @@ def search(query, limit, min_views):
         print_header("Searching for Viral Videos")
 
         downloader = VideoDownloader()
-        videos = downloader.search_viral_videos(query, limit)
+        videos = downloader.search_viral_videos(query, limit, min_views=min_views)
 
         if not videos:
             print_warning("No videos found")

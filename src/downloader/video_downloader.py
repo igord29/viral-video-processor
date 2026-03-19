@@ -1,6 +1,7 @@
 """Video downloader using yt-dlp."""
 
 import os
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,18 @@ class VideoDownloader:
     def __init__(self):
         self.download_path = Config.DOWNLOAD_PATH
         self.download_path.mkdir(parents=True, exist_ok=True)
+        self._has_ffmpeg = shutil.which('ffmpeg') is not None
+        self._has_node = shutil.which('node') is not None
+
+    def _base_ydl_opts(self) -> dict:
+        """Return base yt-dlp options with SSL and JS runtime fixes."""
+        opts = {
+            'nocheckcertificate': True,
+        }
+        # Enable Node.js runtime for YouTube signature solving if available
+        if self._has_node:
+            opts['js_runtimes'] = {'node': {}}
+        return opts
 
     def get_video_info(self, url: str) -> Optional[Dict]:
         """
@@ -28,6 +41,7 @@ class VideoDownloader:
             Dictionary with video information or None if failed
         """
         ydl_opts = {
+            **self._base_ydl_opts(),
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
@@ -87,14 +101,23 @@ class VideoDownloader:
 
         output_template = str(self.download_path / f"{safe_name}.%(ext)s")
 
-        # Download options - use fallback chain for format compatibility
+        # Choose format based on ffmpeg availability
+        # Without ffmpeg, we can't merge separate video+audio streams
+        if self._has_ffmpeg:
+            fmt = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        else:
+            print_warning("ffmpeg not found - downloading best single-stream format")
+            fmt = 'best[ext=mp4]/best'
+
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            **self._base_ydl_opts(),
+            'format': fmt,
             'outtmpl': output_template,
             'quiet': False,
             'no_warnings': False,
-            'merge_output_format': 'mp4',
         }
+        if self._has_ffmpeg:
+            ydl_opts['merge_output_format'] = 'mp4'
 
         last_error = None
         for attempt in range(1, max_retries + 1):
@@ -249,6 +272,7 @@ class VideoDownloader:
         search_url = f"ytsearch{fetch_count}:{search_query}"
 
         ydl_opts = {
+            **self._base_ydl_opts(),
             'quiet': True,
             'no_warnings': True,
             'extract_flat': True,

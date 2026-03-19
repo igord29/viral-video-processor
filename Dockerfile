@@ -2,8 +2,10 @@
 FROM python:3.11-slim
 
 # Install system dependencies for video processing
+# Node.js is required by yt-dlp to solve YouTube's JS signature challenges
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    nodejs \
     libgl1 \
     libglib2.0-0 \
     libsm6 \

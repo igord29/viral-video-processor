@@ -30,6 +30,7 @@ class BatchVideoDownloader:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            'nocheckcertificate': True,
         }
 
         try:
@@ -159,6 +160,7 @@ class BatchVideoDownloader:
                 'no_warnings': False,
                 'merge_output_format': 'mp4',
                 'windowsfilenames': True,  # Windows-safe filenames
+                'nocheckcertificate': True,
             }
 
             print_info(f"Downloading: {info['title'][:60]}...")
@@ -353,6 +355,7 @@ class BatchVideoDownloader:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': True,
+            'nocheckcertificate': True,
         }
 
         try:

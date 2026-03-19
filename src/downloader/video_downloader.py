@@ -1,12 +1,13 @@
 """Video downloader using yt-dlp."""
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 import yt_dlp
 
-from ..utils import Config, print_info, print_success, print_error
+from ..utils import Config, print_info, print_success, print_error, print_warning
 
 
 class VideoDownloader:
@@ -55,67 +56,118 @@ class VideoDownloader:
             print_error(f"Failed to fetch video info: {str(e)}")
             return None
 
-    def download_video(self, url: str, output_filename: Optional[str] = None) -> Optional[str]:
+    def download_video(self, url: str, output_filename: Optional[str] = None, max_retries: int = 3) -> Optional[str]:
         """
         Download video from URL.
 
         Args:
             url: Video URL
             output_filename: Optional custom filename (without extension)
+            max_retries: Number of retry attempts on failure
 
         Returns:
             Path to downloaded video file or None if failed
         """
-        try:
-            # Get video info first
-            info = self.get_video_info(url)
-            if not info:
-                return None
-
-            # Create filename
-            if output_filename:
-                safe_name = output_filename
-            else:
-                # Sanitize title for filename
-                safe_name = "".join(c for c in info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
-                safe_name = safe_name[:100]
-
-            filename = f"{safe_name}.%(ext)s"
-
-            output_path = self.download_path / filename
-
-            # Download options
-            ydl_opts = {
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': str(output_path),
-                'quiet': False,
-                'no_warnings': False,
-                'merge_output_format': 'mp4',
-            }
-
-            print_info(f"Downloading video: {info['title']}")
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-            # Find the actual downloaded file
-            # yt-dlp might add .mp4 extension
-            downloaded_file = None
-            for file in self.download_path.glob(f"{safe_name}.*"):
-                if file.suffix in ['.mp4', '.webm', '.mkv', '.avi']:
-                    downloaded_file = file
-                    break
-
-            if downloaded_file and downloaded_file.exists():
-                print_success(f"Downloaded to: {downloaded_file}")
-                return str(downloaded_file)
-            else:
-                print_error("Download completed but file not found")
-                return None
-
-        except Exception as e:
-            print_error(f"Failed to download video: {str(e)}")
+        # Get video info first
+        info = self.get_video_info(url)
+        if not info:
             return None
+
+        # Create filename
+        if output_filename:
+            safe_name = output_filename
+        else:
+            # Sanitize title for filename
+            safe_name = "".join(c for c in info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_name = safe_name[:100]
+
+        # Handle empty safe_name (e.g. emoji-only or non-latin titles)
+        if not safe_name:
+            safe_name = info.get('id', 'video')
+
+        output_template = str(self.download_path / f"{safe_name}.%(ext)s")
+
+        # Download options - use fallback chain for format compatibility
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': output_template,
+            'quiet': False,
+            'no_warnings': False,
+            'merge_output_format': 'mp4',
+        }
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt > 1:
+                    wait_time = 2 ** attempt
+                    print_warning(f"Retry attempt {attempt}/{max_retries} (waiting {wait_time}s)...")
+                    time.sleep(wait_time)
+
+                print_info(f"Downloading video: {info['title']}")
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # extract_info with download=True returns info dict with filepath
+                    result_info = ydl.extract_info(url, download=True)
+
+                    if not result_info:
+                        print_error("yt-dlp returned no info after download")
+                        continue
+
+                    # Method 1: Get the exact filepath yt-dlp used
+                    filepath = None
+
+                    # Check requested_downloads for the final filepath
+                    requested = result_info.get('requested_downloads')
+                    if requested and len(requested) > 0:
+                        filepath = requested[0].get('filepath')
+
+                    # Method 2: Use prepare_filename to compute expected path
+                    if not filepath or not Path(filepath).exists():
+                        prepared = ydl.prepare_filename(result_info)
+                        # With merge_output_format='mp4', final file has .mp4 extension
+                        for candidate in [prepared, str(Path(prepared).with_suffix('.mp4'))]:
+                            if Path(candidate).exists():
+                                filepath = candidate
+                                break
+
+                    # Method 3: Glob for the safe_name (fallback)
+                    if not filepath or not Path(filepath).exists():
+                        for ext in ['.mp4', '.webm', '.mkv', '.avi']:
+                            candidate = self.download_path / f"{safe_name}{ext}"
+                            if candidate.exists():
+                                filepath = str(candidate)
+                                break
+
+                    # Method 4: Find most recently modified video file in download dir
+                    if not filepath or not Path(filepath).exists():
+                        video_extensions = {'.mp4', '.webm', '.mkv', '.avi'}
+                        recent_file = None
+                        recent_time = 0
+                        for f in self.download_path.iterdir():
+                            if f.suffix in video_extensions and f.is_file():
+                                mtime = f.stat().st_mtime
+                                if mtime > recent_time:
+                                    recent_time = mtime
+                                    recent_file = f
+                        # Only use if modified in the last 60 seconds
+                        if recent_file and (time.time() - recent_time) < 60:
+                            filepath = str(recent_file)
+                            print_warning(f"Found recently downloaded file: {recent_file.name}")
+
+                    if filepath and Path(filepath).exists():
+                        print_success(f"Downloaded to: {filepath}")
+                        return filepath
+
+                    print_error("Download completed but file not found in expected location")
+                    last_error = "File not found after download"
+
+            except Exception as e:
+                last_error = str(e)
+                print_error(f"Download attempt {attempt} failed: {last_error}")
+
+        print_error(f"Failed to download video after {max_retries} attempts: {last_error}")
+        return None
 
     def is_viral(self, info: Dict, min_views: int = 100000) -> bool:
         """

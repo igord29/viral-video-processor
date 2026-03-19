@@ -74,11 +74,13 @@ class VideoDownloader:
 
             # Create filename
             if output_filename:
-                filename = f"{output_filename}.%(ext)s"
+                safe_name = output_filename
             else:
                 # Sanitize title for filename
-                safe_title = "".join(c for c in info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
-                filename = f"{safe_title[:100]}.%(ext)s"
+                safe_name = "".join(c for c in info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
+                safe_name = safe_name[:100]
+
+            filename = f"{safe_name}.%(ext)s"
 
             output_path = self.download_path / filename
 
@@ -99,8 +101,8 @@ class VideoDownloader:
             # Find the actual downloaded file
             # yt-dlp might add .mp4 extension
             downloaded_file = None
-            for file in self.download_path.glob(f"{safe_title[:100]}.*"):
-                if file.suffix in ['.mp4', '.webm', '.mkv']:
+            for file in self.download_path.glob(f"{safe_name}.*"):
+                if file.suffix in ['.mp4', '.webm', '.mkv', '.avi']:
                     downloaded_file = file
                     break
 

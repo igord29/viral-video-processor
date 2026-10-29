@@ -7,8 +7,11 @@ Beautiful web UI for downloading, analyzing, and processing viral videos.
 
 import os
 import json
+import tempfile
+import zipfile
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, url_for
+from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 import threading
 from datetime import datetime
@@ -546,20 +549,21 @@ def open_folder():
         return jsonify({'error': str(e)}), 500
 
 
+def wants_download() -> bool:
+    """True when the request asks for the file as a browser download (?download=1)."""
+    return request.args.get('download') in ('1', 'true')
+
+
 @app.route('/api/video/<path:filename>')
 def serve_video(filename):
-    """Serve a video file for playback or download."""
+    """Serve a video file for playback, or save it to the user's computer with ?download=1."""
     try:
-        # Check in downloads folder first
-        video_path = Config.DOWNLOAD_PATH / filename
-        if video_path.exists():
-            return send_file(video_path, as_attachment=False)
-        
-        # Check in videos folder
-        video_path = Config.VIDEO_PATH / filename
-        if video_path.exists():
-            return send_file(video_path, as_attachment=False)
-        
+        # Check in downloads folder first, then the videos folder
+        for folder in (Config.DOWNLOAD_PATH, Config.VIDEO_PATH):
+            video_path = safe_join(str(folder), filename)
+            if video_path and os.path.isfile(video_path):
+                return send_file(video_path, as_attachment=wants_download())
+
         return jsonify({'error': 'Video not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -956,16 +960,51 @@ def export_all_clips():
 
 @app.route('/api/clip/<filename>')
 def serve_clip(filename):
-    """Serve a clip file for preview."""
+    """Serve a clip file for preview, or save it to the user's computer with ?download=1."""
     try:
-        clip_path = Config.CLIPS_PATH / filename
-        if not clip_path.exists():
+        clip_path = safe_join(str(Config.CLIPS_PATH), filename)
+        if not clip_path or not os.path.isfile(clip_path):
             return jsonify({'error': 'Clip not found'}), 404
-        
+
         return send_file(
             clip_path,
             mimetype='video/mp4',
-            as_attachment=False
+            as_attachment=wants_download()
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clips/zip')
+def download_clips_zip():
+    """Bundle the clips named in repeated ?f= params into one ZIP for saving to the user's computer."""
+    try:
+        filenames = request.args.getlist('f')
+
+        if not filenames:
+            return jsonify({'error': 'No clips selected'}), 400
+
+        clip_paths = []
+        for name in dict.fromkeys(filenames):  # de-duplicate, keep order
+            clip_path = safe_join(str(Config.CLIPS_PATH), name)
+            if clip_path and os.path.isfile(clip_path):
+                clip_paths.append(Path(clip_path))
+
+        if not clip_paths:
+            return jsonify({'error': 'None of the selected clips were found'}), 404
+
+        # Clips are already compressed video, so store them as-is instead of re-compressing
+        archive = tempfile.TemporaryFile()
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_STORED) as zf:
+            for clip_path in clip_paths:
+                zf.write(clip_path, arcname=clip_path.name)
+        archive.seek(0)
+
+        return send_file(
+            archive,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f"clips-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

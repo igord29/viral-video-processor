@@ -101,6 +101,9 @@
                     <h3>Download Complete!</h3>
                     <p id="download-filename">Video downloaded successfully</p>
                     <div class="button-group">
+                        <button class="btn btn-primary" onclick="saveDownloadedVideo()">
+                            <i class="fas fa-download"></i> Save to My Computer
+                        </button>
                         <button class="btn btn-primary" onclick="analyzeDownloadedVideo()">
                             <i class="fas fa-chart-line"></i> Analyze Now
                         </button>
@@ -176,6 +179,7 @@
 <script>
     let currentTaskId = null;
     let currentVideoPath = null;
+    let currentVideoFilename = null;
 
     async function fetchVideoInfo() {
         const url = document.getElementById('video-url').value.trim();
@@ -264,6 +268,7 @@
 
                 if (data.status === 'completed') {
                     currentVideoPath = data.video_path;
+                    currentVideoFilename = data.filename;
                     document.getElementById('download-progress').style.display = 'none';
                     document.getElementById('download-complete').style.display = 'block';
                     document.getElementById('download-filename').textContent = data.filename;
@@ -283,6 +288,16 @@
         checkStatus();
     }
 
+    function saveDownloadedVideo() {
+        if (!currentVideoFilename) {
+            showToast('No video to save yet', 'error');
+            return;
+        }
+        // The file lives on the server; this makes the browser save it to your computer
+        window.location.href = `/api/video/${encodeURIComponent(currentVideoFilename)}?download=1`;
+        showToast('Saving video to your computer...', 'success');
+    }
+
     function analyzeDownloadedVideo() {
         if (currentVideoPath) {
             localStorage.setItem('videoPath', currentVideoPath);
@@ -297,6 +312,7 @@
         document.getElementById('download-complete').style.display = 'none';
         currentTaskId = null;
         currentVideoPath = null;
+        currentVideoFilename = null;
     }
 
     function formatDuration(seconds) {

@@ -89,6 +89,9 @@ function createVideoCard(video) {
     const previewButton = createActionButton('btn btn-sm btn-secondary', 'Preview video', 'fas fa-play', () => {
         previewVideo(video.name, video.path);
     });
+    const saveButton = createActionButton('btn btn-sm btn-secondary', 'Save to my computer', 'fas fa-download', () => {
+        saveVideo(video.path);
+    });
     const deleteButton = createActionButton('btn btn-sm btn-danger', 'Delete video', 'fas fa-trash', () => {
         confirmDeleteVideo(video.path, video.name);
     });
@@ -96,6 +99,7 @@ function createVideoCard(video) {
 
     actions.appendChild(analyzeButton);
     actions.appendChild(previewButton);
+    actions.appendChild(saveButton);
     actions.appendChild(deleteButton);
     card.appendChild(actions);
 
@@ -144,6 +148,14 @@ function analyzeCurrentVideo() {
     if (state.currentVideoPath) {
         analyzeVideo(state.currentVideoPath);
     }
+}
+
+// The file lives on the server; this makes the browser save it to the user's computer
+function saveVideo(videoPath) {
+    if (!videoPath) return;
+    const filename = videoPath.split(/[\\/]/).pop();
+    window.location.href = `/api/video/${encodeURIComponent(filename)}?download=1`;
+    showToast('Saving video to your computer...', 'success');
 }
 
 function analyzeVideo(videoPath) {
@@ -234,6 +246,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const analyzeButton = document.getElementById('analyze-btn');
     if (analyzeButton) {
         analyzeButton.addEventListener('click', analyzeCurrentVideo);
+    }
+    const saveButton = document.getElementById('save-btn');
+    if (saveButton) {
+        saveButton.addEventListener('click', () => saveVideo(state.currentVideoPath));
     }
     const openButtons = document.querySelectorAll('[data-action="open-folder"], #open-folder-btn');
     openButtons.forEach(button => button.addEventListener('click', openDownloadsFolder));

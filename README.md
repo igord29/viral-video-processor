@@ -188,11 +188,11 @@ saved analyses disappear unless they live on a volume:
 
 1. In your Railway project, open the service, then **+ New / Create** > **Volume**.
 2. Set the mount path to `/data` and deploy.
-3. Do not set `DOWNLOAD_PATH`, `VIDEO_PATH`, `CLIPS_PATH` or `TEMP_PATH` in Railway's variables
-   (they override the volume).
 
 The app detects the volume (Railway sets `RAILWAY_VOLUME_MOUNT_PATH`) and stores everything under
-it. The deploy log shows `Storage: persistent (/data)` when it is in use. On other hosts, set
+it. The deploy log shows `Storage: persistent (/data)` when it is in use. Relative settings such as
+`DOWNLOAD_PATH=./downloads` are placed inside the volume too; an absolute path (for example
+`/somewhere/else`) is used exactly as given and is not on the volume. On other hosts, set
 `DATA_DIR` to a folder that persists to get the same behavior.
 
 ## How It Works

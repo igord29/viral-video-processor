@@ -8,6 +8,24 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+
+def _storage_path(env_name: str, folder: str) -> Path:
+    """
+    Resolve one of the app's storage folders.
+
+    With a persistent data folder (Railway volume or DATA_DIR), the default is a subfolder of it,
+    and a relative setting such as DOWNLOAD_PATH=./downloads is placed inside it too. An absolute
+    setting is always used exactly as given.
+    """
+    data_dir = os.getenv('DATA_DIR') or os.getenv('RAILWAY_VOLUME_MOUNT_PATH') or ''
+    configured = os.getenv(env_name)
+    path = Path(configured) if configured else Path(folder)
+
+    if data_dir and not path.is_absolute():
+        path = Path(data_dir) / path
+    return path.resolve()
+
+
 class Config:
     """Application configuration with Windows-specific path handling."""
 
@@ -25,14 +43,12 @@ class Config:
     # everything the app saves then goes under it so files survive redeploys.
     # DATA_DIR does the same on any other host. Without either, files stay in the app folder.
     DATA_DIR = os.getenv('DATA_DIR') or os.getenv('RAILWAY_VOLUME_MOUNT_PATH') or ''
-    _DEFAULT_BASE = Path(DATA_DIR) if DATA_DIR else Path('.')
 
-    # The individual *_PATH variables still override these defaults
-    DOWNLOAD_PATH = Path(os.getenv('DOWNLOAD_PATH', _DEFAULT_BASE / 'downloads')).resolve()
-    VIDEO_PATH = Path(os.getenv('VIDEO_PATH', _DEFAULT_BASE / 'videos')).resolve()
-    CLIPS_PATH = Path(os.getenv('CLIPS_PATH', _DEFAULT_BASE / 'clips')).resolve()
-    TEMP_PATH = Path(os.getenv('TEMP_PATH', _DEFAULT_BASE / 'temp')).resolve()
-    ANALYSIS_RESULTS_PATH = Path(os.getenv('ANALYSIS_RESULTS_PATH', _DEFAULT_BASE / 'analysis_results')).resolve()
+    DOWNLOAD_PATH = _storage_path('DOWNLOAD_PATH', 'downloads')
+    VIDEO_PATH = _storage_path('VIDEO_PATH', 'videos')
+    CLIPS_PATH = _storage_path('CLIPS_PATH', 'clips')
+    TEMP_PATH = _storage_path('TEMP_PATH', 'temp')
+    ANALYSIS_RESULTS_PATH = _storage_path('ANALYSIS_RESULTS_PATH', 'analysis_results')
 
     # Processing settings
     MAX_CLIP_DURATION = int(os.getenv('MAX_CLIP_DURATION', '60'))

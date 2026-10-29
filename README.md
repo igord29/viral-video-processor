@@ -181,6 +181,20 @@ MIN_CLIP_DURATION=15      # Minimum clip length in seconds
 TOP_CLIPS_TO_SHOW=10      # Number of top clips to display
 ```
 
+### Persistent storage on Railway
+
+Railway deletes a service's files on every redeploy, so downloaded videos, exported clips and
+saved analyses disappear unless they live on a volume:
+
+1. In your Railway project, open the service, then **+ New / Create** > **Volume**.
+2. Set the mount path to `/data` and deploy.
+3. Do not set `DOWNLOAD_PATH`, `VIDEO_PATH`, `CLIPS_PATH` or `TEMP_PATH` in Railway's variables
+   (they override the volume).
+
+The app detects the volume (Railway sets `RAILWAY_VOLUME_MOUNT_PATH`) and stores everything under
+it. The deploy log shows `Storage: persistent (/data)` when it is in use. On other hosts, set
+`DATA_DIR` to a folder that persists to get the same behavior.
+
 ## How It Works
 
 ### 1. Video Download

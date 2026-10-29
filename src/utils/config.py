@@ -20,10 +20,19 @@ class Config:
 
     # Paths - using pathlib for cross-platform compatibility
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
-    DOWNLOAD_PATH = Path(os.getenv('DOWNLOAD_PATH', './downloads')).resolve()
-    VIDEO_PATH = Path(os.getenv('VIDEO_PATH', './videos')).resolve()
-    CLIPS_PATH = Path(os.getenv('CLIPS_PATH', './clips')).resolve()
-    TEMP_PATH = Path(os.getenv('TEMP_PATH', './temp')).resolve()
+
+    # Persistent storage: attaching a Railway volume sets RAILWAY_VOLUME_MOUNT_PATH, and
+    # everything the app saves then goes under it so files survive redeploys.
+    # DATA_DIR does the same on any other host. Without either, files stay in the app folder.
+    DATA_DIR = os.getenv('DATA_DIR') or os.getenv('RAILWAY_VOLUME_MOUNT_PATH') or ''
+    _DEFAULT_BASE = Path(DATA_DIR) if DATA_DIR else Path('.')
+
+    # The individual *_PATH variables still override these defaults
+    DOWNLOAD_PATH = Path(os.getenv('DOWNLOAD_PATH', _DEFAULT_BASE / 'downloads')).resolve()
+    VIDEO_PATH = Path(os.getenv('VIDEO_PATH', _DEFAULT_BASE / 'videos')).resolve()
+    CLIPS_PATH = Path(os.getenv('CLIPS_PATH', _DEFAULT_BASE / 'clips')).resolve()
+    TEMP_PATH = Path(os.getenv('TEMP_PATH', _DEFAULT_BASE / 'temp')).resolve()
+    ANALYSIS_RESULTS_PATH = Path(os.getenv('ANALYSIS_RESULTS_PATH', _DEFAULT_BASE / 'analysis_results')).resolve()
 
     # Processing settings
     MAX_CLIP_DURATION = int(os.getenv('MAX_CLIP_DURATION', '60'))

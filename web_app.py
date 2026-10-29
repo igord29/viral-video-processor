@@ -53,8 +53,8 @@ processing_status = {}
 analysis_results = {}
 
 # Create analysis results directory
-ANALYSIS_RESULTS_PATH = Path('analysis_results')
-ANALYSIS_RESULTS_PATH.mkdir(exist_ok=True)
+ANALYSIS_RESULTS_PATH = Config.ANALYSIS_RESULTS_PATH
+ANALYSIS_RESULTS_PATH.mkdir(parents=True, exist_ok=True)
 
 
 def save_analysis_results(task_id: str, data: dict, video_path: str):
@@ -1038,6 +1038,11 @@ if __name__ == '__main__':
     print(f"   Downloads: {Config.DOWNLOAD_PATH}")
     print(f"   Videos: {Config.VIDEO_PATH}")
     print(f"   Clips: {Config.CLIPS_PATH}")
+    print(f"   Analyses: {Config.ANALYSIS_RESULTS_PATH}")
+    if Config.DATA_DIR:
+        print(f"\nStorage: persistent ({Config.DATA_DIR}) - files survive redeploys")
+    else:
+        print("\nStorage: app folder - on Railway these files are deleted on every redeploy (attach a volume)")
     print("\nAPI Status:")
     print(f"   Anthropic API: {'Configured' if Config.ANTHROPIC_API_KEY else 'Not set'}")
     print("\n" + "="*60 + "\n")

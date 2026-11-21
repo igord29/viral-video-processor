@@ -1,11 +1,16 @@
 # Dockerfile for Railway deployment
+
+# Node.js 22+ is required by yt-dlp to solve YouTube's JS challenges. Debian's own nodejs
+# package is version 20, which yt-dlp rejects as too old, so take the binary from the official image.
+FROM node:22-slim AS node-binary
+
 FROM python:3.11-slim
 
+COPY --from=node-binary /usr/local/bin/node /usr/local/bin/node
+
 # Install system dependencies for video processing
-# Node.js is required by yt-dlp to solve YouTube's JS signature challenges
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    nodejs \
     libgl1 \
     libglib2.0-0 \
     libsm6 \

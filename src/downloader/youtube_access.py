@@ -6,6 +6,7 @@ import importlib.util
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -146,7 +147,7 @@ class DiagnosticLogger:
     asking YouTube fails the server log can say why (yt-dlp's own explanation of what it tried).
     """
 
-    _USEFUL = re.compile(r'\[youtube\]|\[jsc|\[pot\]|client|format|signature|challenge|sabr|po token|cookies',
+    _USEFUL = re.compile(r'\[youtube\]|\[jsc|\[pot\]|js runtimes|client|format|signature|challenge|sabr|po token|cookies',
                          re.IGNORECASE)
     _SKIP = re.compile(r'params:|Proxy map|videoplayback|Command-line|Encodings|Python |Extractor Plugins',
                        re.IGNORECASE)
@@ -184,12 +185,35 @@ def find_js_runtime() -> Optional[str]:
     return shutil.which('node') or shutil.which('nodejs')
 
 
+def js_runtime_status() -> str:
+    """Say whether the Node.js found is one yt-dlp will actually use (it rejects old versions)."""
+    path = find_js_runtime()
+    if not path:
+        return 'MISSING'
+    try:
+        # Ask yt-dlp itself, so the answer follows whatever minimum version it currently requires
+        from yt_dlp.utils._jsruntime import NodeJsRuntime
+        info = NodeJsRuntime(path).info
+        if info is None:
+            return f'{path} UNUSABLE (could not run it)'
+        version, supported = info.version, info.supported
+    except Exception:
+        try:
+            out = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=10).stdout
+            version = out.strip().lstrip('v') or 'unknown'
+            supported = version.split('.')[0].isdigit() and int(version.split('.')[0]) >= 22
+        except (OSError, subprocess.SubprocessError):
+            return f'{path} UNUSABLE (could not run it)'
+    if supported:
+        return f'{path} v{version} (accepted by yt-dlp)'
+    return f'{path} v{version} UNSUPPORTED (yt-dlp needs a newer Node.js, so YouTube formats will be missing)'
+
+
 def tooling_summary() -> str:
     """One line saying which downloader tools were found, for the startup log."""
-    node = find_js_runtime()
     solver = importlib.util.find_spec('yt_dlp_ejs') is not None
     return (f"ffmpeg: {'found' if shutil.which('ffmpeg') else 'MISSING'} | "
-            f"JS runtime: {node or 'MISSING'} | "
+            f"JS runtime: {js_runtime_status()} | "
             f"YouTube challenge solver (yt-dlp-ejs): {'installed' if solver else 'MISSING'}")
 
 

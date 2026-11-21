@@ -195,6 +195,29 @@ it. The deploy log shows `Storage: persistent (/data)` when it is in use. Relati
 `/somewhere/else`) is used exactly as given and is not on the volume. On other hosts, set
 `DATA_DIR` to a folder that persists to get the same behavior.
 
+### YouTube bot check ("Sign in to confirm you're not a bot")
+
+YouTube often refuses downloads that come from cloud servers such as Railway and shows this
+message instead of the video. It affects every video, not just one. The fix is to give the app
+YouTube cookies so it downloads as a signed-in viewer:
+
+1. Use a spare Google account, not your main one. YouTube can flag accounts that are used for
+   automated downloads.
+2. Open a **private / incognito window**, sign in to YouTube, then in that same tab go to
+   `https://www.youtube.com/robots.txt`.
+3. With a cookie-export browser extension (for example "Get cookies.txt LOCALLY"), export the
+   cookies for `youtube.com` as a `cookies.txt` file. Then **close the private window** so
+   YouTube does not rotate the cookies you just exported.
+4. In Railway, open the service, go to **Variables**, add a variable named `YOUTUBE_COOKIES`,
+   and paste the full text of `cookies.txt` as its value. Railway redeploys.
+5. The deploy log shows `YouTube cookies: Configured` when the app has them.
+
+Treat these cookies like a password: they give access to that Google account, so keep them only
+in the Railway variable and never commit them. They expire after a while; when the "not a bot"
+message returns, repeat the steps with fresh cookies. This is not guaranteed to work, because
+YouTube can still block a server's address. On other hosts, `YOUTUBE_COOKIES_FILE` can point at
+the file instead of pasting it into a variable.
+
 ## How It Works
 
 ### 1. Video Download

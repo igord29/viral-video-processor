@@ -17,6 +17,7 @@ import threading
 from datetime import datetime
 
 from src.downloader import VideoDownloader, BatchVideoDownloader
+from src.downloader.youtube_access import describe_download_error, cookies_configured
 from src.transcription import WhisperTranscriber
 from src.analysis import EngagementAnalyzer, AudioAnalyzer
 from src.utils import Config, console
@@ -184,7 +185,7 @@ def get_video_info():
         info = downloader.get_video_info(url)
         
         if not info:
-            return jsonify({'error': 'Failed to fetch video info. Please check the URL and try again.'}), 400
+            return jsonify({'error': describe_download_error(downloader.last_error)}), 400
         
         return jsonify({
             'success': True,
@@ -248,7 +249,7 @@ def download_video():
                     processing_status[task_id] = {
                         'status': 'error',
                         'progress': 0,
-                        'message': 'Download failed'
+                        'message': describe_download_error(downloader.last_error) if downloader.last_error else 'Download failed'
                     }
             except Exception as e:
                 processing_status[task_id] = {
@@ -1045,6 +1046,7 @@ if __name__ == '__main__':
         print("\nStorage: app folder - on Railway these files are deleted on every redeploy (attach a volume)")
     print("\nAPI Status:")
     print(f"   Anthropic API: {'Configured' if Config.ANTHROPIC_API_KEY else 'Not set'}")
+    print(f"   YouTube cookies: {'Configured' if cookies_configured() else 'Not set (YouTube may block this server with a bot check)'}")
     print("\n" + "="*60 + "\n")
     
     # Use PORT from environment (Railway) or default to 5000

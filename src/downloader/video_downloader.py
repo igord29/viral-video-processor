@@ -3,12 +3,14 @@
 import os
 import shutil
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 import yt_dlp
 
 from ..utils import Config, print_info, print_success, print_error, print_warning
+from .youtube_access import youtube_cookie_file, is_retryable
 
 
 class VideoDownloader:
@@ -19,6 +21,18 @@ class VideoDownloader:
         self.download_path.mkdir(parents=True, exist_ok=True)
         self._has_ffmpeg = shutil.which('ffmpeg') is not None
         self._has_node = shutil.which('node') is not None
+        # Raw yt-dlp error from the last failed call, so callers can tell the user why
+        self.last_error: Optional[str] = None
+
+    @contextmanager
+    def _youtube_dl(self, ydl_opts: dict):
+        """A YoutubeDL that is signed in with the configured YouTube cookies, if there are any."""
+        with youtube_cookie_file() as cookie_path:
+            opts = dict(ydl_opts)
+            if cookie_path:
+                opts['cookiefile'] = cookie_path
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                yield ydl
 
     def _base_ydl_opts(self) -> dict:
         """Return base yt-dlp options with SSL and JS runtime fixes."""
@@ -47,8 +61,9 @@ class VideoDownloader:
             'extract_flat': False,
         }
 
+        self.last_error = None
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with self._youtube_dl(ydl_opts) as ydl:
                 print_info(f"Fetching video information from {url}...")
                 info = ydl.extract_info(url, download=False)
 
@@ -67,6 +82,7 @@ class VideoDownloader:
                 }
 
         except Exception as e:
+            self.last_error = str(e)
             print_error(f"Failed to fetch video info: {str(e)}")
             return None
 
@@ -129,7 +145,7 @@ class VideoDownloader:
 
                 print_info(f"Downloading video: {info['title']}")
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with self._youtube_dl(ydl_opts) as ydl:
                     # extract_info with download=True returns info dict with filepath
                     result_info = ydl.extract_info(url, download=True)
 
@@ -188,7 +204,10 @@ class VideoDownloader:
             except Exception as e:
                 last_error = str(e)
                 print_error(f"Download attempt {attempt} failed: {last_error}")
+                if not is_retryable(last_error):
+                    break  # waiting and trying again cannot fix this
 
+        self.last_error = last_error
         print_error(f"Failed to download video after {max_retries} attempts: {last_error}")
         return None
 
@@ -282,7 +301,7 @@ class VideoDownloader:
         try:
             print_info(f"Searching {platform} for viral content: {query}")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with self._youtube_dl(ydl_opts) as ydl:
                 result = ydl.extract_info(search_url, download=False)
 
                 videos = []

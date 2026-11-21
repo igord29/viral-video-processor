@@ -50,6 +50,11 @@ class Config:
     TEMP_PATH = _storage_path('TEMP_PATH', 'temp')
     ANALYSIS_RESULTS_PATH = _storage_path('ANALYSIS_RESULTS_PATH', 'analysis_results')
 
+    # YouTube cookies, for YouTube's "Sign in to confirm you're not a bot" check on servers.
+    # YOUTUBE_COOKIES holds the cookies.txt contents (as-is or base64); YOUTUBE_COOKIES_FILE is a path.
+    YOUTUBE_COOKIES = os.getenv('YOUTUBE_COOKIES', '')
+    YOUTUBE_COOKIES_FILE = os.getenv('YOUTUBE_COOKIES_FILE', '')
+
     # Processing settings
     MAX_CLIP_DURATION = int(os.getenv('MAX_CLIP_DURATION', '60'))
     MIN_CLIP_DURATION = int(os.getenv('MIN_CLIP_DURATION', '15'))

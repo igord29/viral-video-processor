@@ -2,8 +2,10 @@
 
 import base64
 import binascii
+import importlib.util
 import os
 import re
+import shutil
 import tempfile
 from contextlib import contextmanager
 from typing import Iterator, Optional
@@ -98,11 +100,29 @@ def youtube_cookie_file() -> Iterator[Optional[str]]:
             pass
 
 
+_UNAVAILABLE = ('video unavailable', 'this video is not available', 'no longer available',
+                'has been removed', 'this video is private')
+_NO_FORMATS = ('requested format is not available', 'no video formats found')
+
+
+def find_js_runtime() -> Optional[str]:
+    """Path of the Node.js binary yt-dlp uses to solve YouTube's challenges (None if absent)."""
+    return shutil.which('node') or shutil.which('nodejs')
+
+
+def tooling_summary() -> str:
+    """One line saying which downloader tools were found, for the startup log."""
+    node = find_js_runtime()
+    solver = importlib.util.find_spec('yt_dlp_ejs') is not None
+    return (f"ffmpeg: {'found' if shutil.which('ffmpeg') else 'MISSING'} | "
+            f"JS runtime: {node or 'MISSING'} | "
+            f"YouTube challenge solver (yt-dlp-ejs): {'installed' if solver else 'MISSING'}")
+
+
 def is_retryable(raw: Optional[str]) -> bool:
-    """False for failures a retry cannot fix (bot check, private, unavailable, age-restricted)."""
+    """False for failures a retry cannot fix (bot check, private, unavailable, no formats, age check)."""
     lowered = _ANSI_CODES.sub('', raw or '').lower()
-    permanent = ('not a bot', 'private video', 'video unavailable', 'is not available',
-                 'has been removed', 'confirm your age', 'age-restricted')
+    permanent = ('not a bot', 'confirm your age', 'age-restricted') + _UNAVAILABLE + _NO_FORMATS
     return not any(marker in lowered for marker in permanent)
 
 
@@ -119,12 +139,16 @@ def describe_download_error(raw: Optional[str]) -> str:
         return ("YouTube is blocking downloads from this server (\"Sign in to confirm you're not a bot\"). "
                 "Add YouTube cookies to fix it: set the YOUTUBE_COOKIES variable "
                 "(see \"YouTube bot check\" in the README).")
-    if 'private video' in lowered:
+    if 'private video' in lowered or 'this video is private' in lowered:
         return 'This video is private, so it cannot be downloaded.'
-    if 'age' in lowered and ('confirm your age' in lowered or 'age-restricted' in lowered):
+    if 'confirm your age' in lowered or 'age-restricted' in lowered:
         return ('This video is age-restricted. YouTube only allows it for a signed-in account, so '
                 'YouTube cookies are needed (see "YouTube bot check" in the README).')
-    if 'video unavailable' in lowered or 'is not available' in lowered or 'has been removed' in lowered:
+    if any(marker in lowered for marker in _NO_FORMATS):
+        return ("YouTube did not offer any downloadable formats for this video. This is usually a "
+                "problem with the downloader's YouTube support on this server, not with the video: "
+                "check the startup log's 'Downloader' line for anything MISSING.")
+    if any(marker in lowered for marker in _UNAVAILABLE):
         return 'This video is unavailable (removed, region-locked, or not public).'
 
     if not text:

@@ -17,7 +17,7 @@ import threading
 from datetime import datetime
 
 from src.downloader import VideoDownloader, BatchVideoDownloader
-from src.downloader.youtube_access import describe_download_error, cookies_configured
+from src.downloader.youtube_access import describe_download_error, cookies_configured, tooling_summary
 from src.transcription import WhisperTranscriber
 from src.analysis import EngagementAnalyzer, AudioAnalyzer
 from src.utils import Config, console
@@ -1047,6 +1047,7 @@ if __name__ == '__main__':
     print("\nAPI Status:")
     print(f"   Anthropic API: {'Configured' if Config.ANTHROPIC_API_KEY else 'Not set'}")
     print(f"   YouTube cookies: {'Configured' if cookies_configured() else 'Not set (YouTube may block this server with a bot check)'}")
+    print(f"   Downloader: {tooling_summary()}")
     print("\n" + "="*60 + "\n")
     
     # Use PORT from environment (Railway) or default to 5000

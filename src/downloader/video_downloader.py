@@ -10,7 +10,7 @@ from typing import Dict, Optional
 import yt_dlp
 
 from ..utils import Config, print_info, print_success, print_error, print_warning
-from .youtube_access import youtube_cookie_file, is_retryable
+from .youtube_access import youtube_cookie_file, is_retryable, find_js_runtime
 
 
 class VideoDownloader:
@@ -20,7 +20,7 @@ class VideoDownloader:
         self.download_path = Config.DOWNLOAD_PATH
         self.download_path.mkdir(parents=True, exist_ok=True)
         self._has_ffmpeg = shutil.which('ffmpeg') is not None
-        self._has_node = shutil.which('node') is not None
+        self._js_runtime = find_js_runtime()
         # Raw yt-dlp error from the last failed call, so callers can tell the user why
         self.last_error: Optional[str] = None
 
@@ -40,8 +40,8 @@ class VideoDownloader:
             'nocheckcertificate': True,
         }
         # Enable Node.js runtime for YouTube signature solving if available
-        if self._has_node:
-            opts['js_runtimes'] = {'node': {}}
+        if self._js_runtime:
+            opts['js_runtimes'] = {'node': {'path': self._js_runtime}}
         return opts
 
     def get_video_info(self, url: str) -> Optional[Dict]:
@@ -57,7 +57,8 @@ class VideoDownloader:
         ydl_opts = {
             **self._base_ydl_opts(),
             'quiet': True,
-            'no_warnings': True,
+            # Keep yt-dlp's warnings (they go to the server log) so failures can be diagnosed
+            'no_warnings': False,
             'extract_flat': False,
         }
 

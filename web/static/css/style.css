@@ -591,6 +591,78 @@ body {
     margin-top: 1.5rem;
 }
 
+/* Download Multiple Videos */
+.batch-input {
+    min-height: 8rem;
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+.batch-summary {
+    margin-top: 1.5rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.batch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.batch-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+}
+
+.batch-item-icon {
+    flex-shrink: 0;
+    width: 1.25rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.batch-item.downloading .batch-item-icon {
+    color: var(--primary-color);
+}
+
+.batch-item.completed .batch-item-icon {
+    color: var(--success-color);
+}
+
+.batch-item.error .batch-item-icon {
+    color: var(--error-color);
+}
+
+.batch-item-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.batch-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+
+.batch-item-note {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+}
+
+.batch-item .btn {
+    flex-shrink: 0;
+}
+
 /* Page Layout */
 .page-container {
     max-width: 1400px;

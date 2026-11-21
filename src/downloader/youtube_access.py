@@ -107,6 +107,9 @@ _UNAVAILABLE = ('video unavailable', 'this video is not available', 'no longer a
                 'has been removed', 'this video is private', 'private video')
 _NO_FORMATS = ('requested format is not available', 'no video formats found')
 
+# Reported instead of video details when a link turns out to be a whole YouTube playlist or channel
+PLAYLIST_LINK_ERROR = 'This link is a YouTube playlist, not a single video'
+
 
 @dataclass(frozen=True)
 class Strategy:
@@ -133,6 +136,11 @@ def download_strategies() -> List[Strategy]:
         Strategy('signed out, clients that need no token', use_cookies=False,
                  extractor_args={'youtube': {'player_client': ['android_vr', 'tv_simply', 'mweb', 'web_embedded']}}),
     ]
+
+
+def is_bot_check(raw: Optional[str]) -> bool:
+    """True when YouTube refused this server with its "confirm you're not a bot" check."""
+    return 'not a bot' in _ANSI_CODES.sub('', raw or '').lower()
 
 
 def is_video_gone(raw: Optional[str]) -> bool:
@@ -229,6 +237,9 @@ def describe_download_error(raw: Optional[str]) -> str:
     text = _ANSI_CODES.sub('', raw or '').strip()
     lowered = text.lower()
 
+    if text == PLAYLIST_LINK_ERROR:
+        return ("This link is a playlist, not a single video. Paste the links of the videos you want "
+                "instead (the Download Multiple Videos box takes one link per line).")
     if 'not a bot' in lowered:  # not "sign in to confirm": the age check starts the same way
         if cookies_configured():
             return ("YouTube is still asking this server to prove it isn't a bot, even with the saved "

@@ -113,6 +113,51 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Download Multiple Videos -->
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-layer-group"></i> Download Multiple Videos</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="batch-urls">
+                            <i class="fas fa-list"></i> Video links
+                        </label>
+                        <textarea
+                            id="batch-urls"
+                            class="form-input batch-input"
+                            rows="6"
+                            placeholder="Paste one link per line&#10;https://www.youtube.com/watch?v=...&#10;https://youtu.be/..."
+                        ></textarea>
+                        <small class="form-help">
+                            Up to {{ max_batch_urls }} links at a time. Each video is saved to your Videos library.
+                        </small>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="button" class="btn btn-primary" id="batch-start" onclick="startBatchDownload()">
+                            <i class="fas fa-download"></i> Download All
+                        </button>
+                    </div>
+
+                    <div id="batch-progress" style="display: none;">
+                        <div id="batch-summary" class="batch-summary"></div>
+                        <div id="batch-list" class="batch-list"></div>
+                        <div id="batch-finished" class="button-group" style="display: none;">
+                            <a class="btn btn-primary" href="{{ url_for('videos_page') }}">
+                                <i class="fas fa-video"></i> Open Videos Library
+                            </a>
+                            <button type="button" class="btn btn-secondary" id="batch-retry" style="display: none;" onclick="retryFailedBatch()">
+                                <i class="fas fa-redo"></i> Retry Failed
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="resetBatch()">
+                                <i class="fas fa-plus"></i> Start Another List
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Sidebar -->
@@ -130,7 +175,11 @@
                         </li>
                         <li>
                             <i class="fas fa-check"></i>
-                            Works with YouTube shorts and playlists
+                            Works with YouTube videos and Shorts
+                        </li>
+                        <li>
+                            <i class="fas fa-check"></i>
+                            Paste a list of links to download several at once
                         </li>
                         <li>
                             <i class="fas fa-check"></i>
@@ -332,6 +381,178 @@
         return num.toString();
     }
 
+    // ---- Download Multiple Videos ----
+    let batchId = null;
+    let batchItems = [];
+
+    const BATCH_ICONS = {
+        queued: 'fas fa-clock',
+        downloading: 'fas fa-circle-notch fa-spin',
+        completed: 'fas fa-check-circle',
+        error: 'fas fa-times-circle'
+    };
+    const BATCH_NOTES = {
+        queued: 'Waiting',
+        downloading: 'Downloading...'
+    };
+
+    async function startBatchDownload() {
+        const text = document.getElementById('batch-urls').value;
+        if (!text.trim()) {
+            showToast('Paste at least one video link', 'error');
+            return;
+        }
+
+        const startButton = document.getElementById('batch-start');
+        startButton.disabled = true;
+
+        try {
+            const response = await fetch('/api/download-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                batchId = data.batch_id;
+                localStorage.setItem('batchId', batchId);
+                showToast(`Downloading ${data.total} video${data.total === 1 ? '' : 's'}`, 'success');
+                showBatchProgress(`Starting ${data.total} download${data.total === 1 ? '' : 's'}...`);
+                pollBatchStatus(batchId, true);
+            } else {
+                startButton.disabled = false;
+                showToast(data.error || 'Failed to start the downloads', 'error');
+            }
+        } catch (error) {
+            startButton.disabled = false;
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    function showBatchProgress(summary) {
+        document.getElementById('batch-progress').style.display = 'block';
+        document.getElementById('batch-finished').style.display = 'none';
+        document.getElementById('batch-summary').textContent = summary;
+        document.getElementById('batch-list').replaceChildren();
+    }
+
+    // startedHere is false when picking a list back up after the page was reloaded
+    async function pollBatchStatus(id, startedHere) {
+        if (id !== batchId) return;  // a newer list has replaced this one
+
+        try {
+            const response = await fetch(`/api/batch-status/${id}`);
+            if (id !== batchId) return;
+
+            if (response.status === 404) {
+                // The server restarted and no longer knows this list
+                localStorage.removeItem('batchId');
+                if (startedHere) {
+                    document.getElementById('batch-summary').textContent =
+                        'The server restarted, so progress for this list was lost. Videos that finished are in your Videos library.';
+                    finishBatch(false);
+                } else {
+                    resetBatch();
+                }
+                return;
+            }
+
+            const data = await response.json();
+            renderBatch(data);
+
+            if (data.status === 'completed') {
+                finishBatch(data.failed > 0);
+                if (startedHere) {
+                    showToast(`Finished: ${data.completed} of ${data.total} downloaded`, data.failed ? 'error' : 'success');
+                }
+            } else {
+                setTimeout(() => pollBatchStatus(id, startedHere), 2000);
+            }
+        } catch (error) {
+            console.error('Error checking list status:', error);
+            setTimeout(() => pollBatchStatus(id, startedHere), 4000);
+        }
+    }
+
+    function renderBatch(data) {
+        batchItems = data.items || [];
+        const finished = data.completed + data.failed;
+        let summary = data.status === 'completed'
+            ? `Finished: ${data.completed} of ${data.total} downloaded`
+            : `Downloading: ${finished} of ${data.total} done`;
+        if (data.failed) {
+            summary += `, ${data.failed} failed`;
+        }
+        document.getElementById('batch-summary').textContent = summary;
+
+        // Built with textContent: titles and messages come from the video sites
+        const rows = batchItems.map(item => {
+            const row = document.createElement('div');
+            row.className = `batch-item ${item.status}`;
+
+            const icon = document.createElement('i');
+            icon.className = `batch-item-icon ${BATCH_ICONS[item.status] || BATCH_ICONS.queued}`;
+            row.appendChild(icon);
+
+            const text = document.createElement('div');
+            text.className = 'batch-item-text';
+            const title = document.createElement('div');
+            title.className = 'batch-item-title';
+            title.textContent = item.title || item.url;
+            title.title = item.url;
+            const note = document.createElement('div');
+            note.className = 'batch-item-note';
+            if (item.status === 'error') {
+                note.textContent = item.message || 'Download failed';
+            } else if (item.status === 'completed') {
+                // Naming the file tells apart videos that share a title
+                note.textContent = `Saved to your Videos library as ${item.filename}`;
+            } else {
+                note.textContent = BATCH_NOTES[item.status] || BATCH_NOTES.queued;
+            }
+            text.append(title, note);
+            row.appendChild(text);
+
+            if (item.status === 'completed' && item.filename) {
+                const save = document.createElement('button');
+                save.type = 'button';
+                save.className = 'btn btn-sm btn-secondary';
+                save.title = 'Save to my computer';
+                save.innerHTML = '<i class="fas fa-download"></i> Save';
+                save.addEventListener('click', () => {
+                    window.location.href = `/api/video/${encodeURIComponent(item.filename)}?download=1`;
+                });
+                row.appendChild(save);
+            }
+            return row;
+        });
+        document.getElementById('batch-list').replaceChildren(...rows);
+    }
+
+    function finishBatch(hasFailures) {
+        document.getElementById('batch-start').disabled = false;
+        document.getElementById('batch-finished').style.display = 'flex';
+        document.getElementById('batch-retry').style.display = hasFailures ? '' : 'none';
+    }
+
+    function retryFailedBatch() {
+        const failed = batchItems.filter(item => item.status === 'error').map(item => item.url);
+        if (!failed.length) return;
+        document.getElementById('batch-urls').value = failed.join('\n');
+        startBatchDownload();
+    }
+
+    function resetBatch() {
+        batchId = null;
+        batchItems = [];
+        localStorage.removeItem('batchId');
+        document.getElementById('batch-urls').value = '';
+        document.getElementById('batch-start').disabled = false;
+        document.getElementById('batch-progress').style.display = 'none';
+    }
+
     // Check for URL from search page
     document.addEventListener('DOMContentLoaded', function() {
         const savedUrl = localStorage.getItem('downloadUrl');
@@ -340,6 +561,14 @@
             localStorage.removeItem('downloadUrl');
             // Auto-fetch info
             fetchVideoInfo();
+        }
+
+        // Pick a list back up if the page was reloaded while it was running
+        const savedBatchId = localStorage.getItem('batchId');
+        if (savedBatchId) {
+            batchId = savedBatchId;
+            showBatchProgress('Checking on your list...');
+            pollBatchStatus(batchId, false);
         }
     });
 </script>

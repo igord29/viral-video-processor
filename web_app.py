@@ -7,9 +7,13 @@ Beautiful web UI for downloading, analyzing, and processing viral videos.
 
 import os
 import json
+import re
 import tempfile
+import time
+import uuid
 import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
 from flask import Flask, render_template, request, jsonify, send_file, url_for
 from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
@@ -17,7 +21,8 @@ import threading
 from datetime import datetime
 
 from src.downloader import VideoDownloader, BatchVideoDownloader
-from src.downloader.youtube_access import describe_download_error, cookies_configured, tooling_summary
+from src.downloader.youtube_access import (describe_download_error, cookies_configured, tooling_summary,
+                                           is_bot_check)
 from src.transcription import WhisperTranscriber
 from src.analysis import EngagementAnalyzer, AudioAnalyzer
 from src.utils import Config, console
@@ -52,6 +57,11 @@ def inject_static_version():
 # Store processing status
 processing_status = {}
 analysis_results = {}
+# Lists started from "Download Multiple Videos", by batch ID
+batch_status = {}
+
+# Pause between the videos of one list, to stay clear of YouTube's rate limits
+BATCH_PAUSE_SECONDS = 1
 
 # Create analysis results directory
 ANALYSIS_RESULTS_PATH = Config.ANALYSIS_RESULTS_PATH
@@ -136,7 +146,7 @@ def index():
 @app.route('/download')
 def download_page():
     """Video download page."""
-    return render_template('download.html')
+    return render_template('download.html', max_batch_urls=Config.MAX_BATCH_URLS)
 
 
 @app.route('/analyze')
@@ -270,6 +280,110 @@ def download_video():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+_URL_PATTERN = re.compile(r'https?://[^\s,<>"\']+')
+
+
+def extract_urls(text: str) -> list:
+    """Pull the links out of pasted text (one per line, or separated by spaces or commas), without repeats."""
+    urls = []
+    for match in _URL_PATTERN.findall(text or ''):
+        url = match.rstrip('.;)')
+        if url not in urls:
+            urls.append(url)
+    return urls
+
+
+def is_youtube_url(url: str) -> bool:
+    host = (urlparse(url).hostname or '').lower()
+    return host == 'youtu.be' or any(host == site or host.endswith('.' + site)
+                                     for site in ('youtube.com', 'youtube-nocookie.com'))
+
+
+def run_batch(batch_id: str):
+    """Download a batch's videos one after another, recording the outcome of each."""
+    batch = batch_status[batch_id]
+    downloader = VideoDownloader()
+    # Set once YouTube refuses this server: the rest of the YouTube links would fail the same
+    # way, and asking again and again while blocked only makes the block last longer
+    blocked_message = None
+
+    for position, item in enumerate(batch['items']):
+        if blocked_message and is_youtube_url(item['url']):
+            item.update(status='error', message=blocked_message)
+            continue
+        if position:
+            time.sleep(BATCH_PAUSE_SECONDS)
+
+        item['status'] = 'downloading'
+        try:
+            info = downloader.get_video_info(item['url'])
+            if info:
+                item['title'] = info.get('title')
+            video_path = downloader.download_video(item['url'], info=info) if info else None
+
+            if video_path:
+                item.update(status='completed', filename=Path(video_path).name)
+            else:
+                item.update(status='error', message=describe_download_error(downloader.last_error))
+                if is_bot_check(downloader.last_error):
+                    blocked_message = item['message']
+        except Exception as e:
+            item.update(status='error', message=f'Error: {str(e)[:300]}')
+
+    batch['status'] = 'completed'
+
+
+@app.route('/api/download-batch', methods=['POST'])
+def download_batch():
+    """Download several videos into the library from a pasted list of links."""
+    try:
+        data = request.get_json(silent=True) or {}
+        text = data.get('text') or ''
+        if isinstance(data.get('urls'), list):
+            text += '\n' + '\n'.join(str(url) for url in data['urls'])
+
+        urls = extract_urls(str(text))
+        if not urls:
+            return jsonify({'error': 'No links found. Paste one video link per line.'}), 400
+        if len(urls) > Config.MAX_BATCH_URLS:
+            return jsonify({'error': f'That is {len(urls)} links and the limit is {Config.MAX_BATCH_URLS} at a time. '
+                                     'Remove some and send the rest as a second list.'}), 400
+
+        batch_id = uuid.uuid4().hex[:12]
+        batch_status[batch_id] = {
+            'status': 'running',
+            'items': [{'url': url, 'status': 'queued', 'title': None, 'filename': None, 'message': None}
+                      for url in urls],
+        }
+
+        # Start the downloads in the background
+        thread = threading.Thread(target=run_batch, args=(batch_id,))
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({'success': True, 'batch_id': batch_id, 'total': len(urls)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/batch-status/<batch_id>', methods=['GET'])
+def get_batch_status(batch_id):
+    """Progress of a list started with /api/download-batch, video by video."""
+    batch = batch_status.get(batch_id)
+    if not batch:
+        return jsonify({'error': 'List not found'}), 404
+
+    items = batch['items']
+    return jsonify({
+        'success': True,
+        'status': batch['status'],
+        'total': len(items),
+        'completed': sum(1 for item in items if item['status'] == 'completed'),
+        'failed': sum(1 for item in items if item['status'] == 'error'),
+        'items': items,
+    })
 
 
 @app.route('/api/analyze', methods=['POST'])

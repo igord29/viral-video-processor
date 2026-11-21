@@ -66,6 +66,7 @@ class Config:
 
     # Batch processing settings
     MAX_PLAYLIST_VIDEOS = int(os.getenv('MAX_PLAYLIST_VIDEOS', '50'))
+    MAX_BATCH_URLS = int(os.getenv('MAX_BATCH_URLS', '25'))  # links per "Download Multiple Videos" list
     BATCH_DOWNLOAD_THREADS = int(os.getenv('BATCH_DOWNLOAD_THREADS', '3'))
 
     @classmethod

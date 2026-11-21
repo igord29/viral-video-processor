@@ -11,7 +11,8 @@ import yt_dlp
 
 from ..utils import Config, print_info, print_success, print_error, print_warning
 from .youtube_access import (youtube_cookie_file, is_retryable, find_js_runtime, download_strategies,
-                             is_video_gone, DiagnosticLogger, Strategy)
+                             is_video_gone, DiagnosticLogger, Strategy, PLAYLIST_LINK_ERROR)
+from .video_names import VIDEO_EXTENSIONS, claim_name, release_name, video_key
 
 
 class VideoDownloader:
@@ -47,6 +48,9 @@ class VideoDownloader:
         """Return base yt-dlp options with SSL and JS runtime fixes."""
         opts = {
             'nocheckcertificate': True,
+            # A video link copied from inside a playlist (watch?v=...&list=...) means that one
+            # video; without this yt-dlp fetches the whole playlist under a single file name
+            'noplaylist': True,
         }
         # Enable Node.js runtime for YouTube signature solving if available
         if self._js_runtime:
@@ -76,8 +80,8 @@ class VideoDownloader:
                 self._strategy = strategy
                 return info
             first_error = first_error or error
-            if is_video_gone(error):
-                break  # the video itself is private or removed; asking differently cannot help
+            if is_video_gone(error) or error == PLAYLIST_LINK_ERROR:
+                break  # private, removed or not a single video: asking differently cannot help
 
         # The first attempt's error is the most representative one to show the user
         self.last_error = first_error
@@ -89,12 +93,15 @@ class VideoDownloader:
         ydl_opts = {
             **self._base_ydl_opts(),
             'quiet': True,
-            'extract_flat': False,
+            # List a playlist's videos without opening each one, so a playlist link answers quickly
+            'extract_flat': 'in_playlist',
         }
         logger = DiagnosticLogger()
         try:
             with self._youtube_dl(ydl_opts, strategy, logger) as ydl:
                 info = ydl.extract_info(url, download=False)
+                if info.get('_type') == 'playlist' and str(info.get('extractor_key') or '').startswith('Youtube'):
+                    return None, PLAYLIST_LINK_ERROR
                 return {
                     'title': info.get('title', 'Unknown'),
                     'channel': info.get('uploader', info.get('channel', 'Unknown')),
@@ -104,6 +111,7 @@ class VideoDownloader:
                     'upload_date': info.get('upload_date', 'Unknown'),
                     'webpage_url': info.get('webpage_url', url),
                     'id': info.get('id', 'unknown'),
+                    'extractor': info.get('extractor_key') or info.get('extractor') or '',
                     'ext': info.get('ext', 'mp4'),
                     'description': info.get('description', ''),
                     'thumbnail': info.get('thumbnail', ''),
@@ -116,7 +124,8 @@ class VideoDownloader:
                 print(f"[diag]    {line}", flush=True)
             return None, error
 
-    def download_video(self, url: str, output_filename: Optional[str] = None, max_retries: int = 3) -> Optional[str]:
+    def download_video(self, url: str, output_filename: Optional[str] = None, max_retries: int = 3,
+                       info: Optional[Dict] = None) -> Optional[str]:
         """
         Download video from URL.
 
@@ -124,27 +133,32 @@ class VideoDownloader:
             url: Video URL
             output_filename: Optional custom filename (without extension)
             max_retries: Number of retry attempts on failure
+            info: Result of get_video_info(url) if the caller already has it (saves asking again)
 
         Returns:
             Path to downloaded video file or None if failed
         """
         # Get video info first
-        info = self.get_video_info(url)
+        info = info or self.get_video_info(url)
         if not info:
             return None
 
-        # Create filename
         if output_filename:
-            safe_name = output_filename
-        else:
-            # Sanitize title for filename
-            safe_name = "".join(c for c in info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
-            safe_name = safe_name[:100]
+            return self._download_as(url, info, output_filename, max_retries)
 
-        # Handle empty safe_name (e.g. emoji-only or non-latin titles)
-        if not safe_name:
-            safe_name = info.get('id', 'video')
+        # Different videos can share a title ("Video by <account>"), and yt-dlp skips a download
+        # whose file already exists, so each video claims its own name first
+        key = video_key(info)
+        safe_name = claim_name(self.download_path, info['title'], key, info.get('id'))
+        saved = None
+        try:
+            saved = self._download_as(url, info, safe_name, max_retries)
+            return saved
+        finally:
+            release_name(self.download_path, safe_name, key, Path(saved) if saved else None)
 
+    def _download_as(self, url: str, info: Dict, safe_name: str, max_retries: int) -> Optional[str]:
+        """Download a video to the given file name (without extension). Returns the path or None."""
         output_template = str(self.download_path / f"{safe_name}.%(ext)s")
 
         # Choose format based on ffmpeg availability
@@ -167,6 +181,7 @@ class VideoDownloader:
 
         last_error = None
         for attempt in range(1, max_retries + 1):
+            attempt_started = time.time()
             try:
                 if attempt > 1:
                     wait_time = 2 ** attempt
@@ -202,7 +217,7 @@ class VideoDownloader:
 
                     # Method 3: Glob for the safe_name (fallback)
                     if not filepath or not Path(filepath).exists():
-                        for ext in ['.mp4', '.webm', '.mkv', '.avi']:
+                        for ext in VIDEO_EXTENSIONS:
                             candidate = self.download_path / f"{safe_name}{ext}"
                             if candidate.exists():
                                 filepath = str(candidate)
@@ -210,17 +225,17 @@ class VideoDownloader:
 
                     # Method 4: Find most recently modified video file in download dir
                     if not filepath or not Path(filepath).exists():
-                        video_extensions = {'.mp4', '.webm', '.mkv', '.avi'}
                         recent_file = None
                         recent_time = 0
                         for f in self.download_path.iterdir():
-                            if f.suffix in video_extensions and f.is_file():
+                            if f.suffix in VIDEO_EXTENSIONS and f.is_file():
                                 mtime = f.stat().st_mtime
                                 if mtime > recent_time:
                                     recent_time = mtime
                                     recent_file = f
-                        # Only use if modified in the last 60 seconds
-                        if recent_file and (time.time() - recent_time) < 60:
+                        # Only a file written during this attempt can be this video (when several
+                        # links download in a row, the newest file may be the previous video)
+                        if recent_file and recent_time >= attempt_started - 1:
                             filepath = str(recent_file)
                             print_warning(f"Found recently downloaded file: {recent_file.name}")
 

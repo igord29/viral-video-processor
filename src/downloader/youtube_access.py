@@ -8,7 +8,8 @@ import re
 import shutil
 import tempfile
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from dataclasses import dataclass
+from typing import Iterator, List, Optional
 
 from ..utils import Config
 
@@ -76,14 +77,15 @@ def cookies_configured() -> bool:
 
 
 @contextmanager
-def youtube_cookie_file() -> Iterator[Optional[str]]:
+def youtube_cookie_file(enabled: bool = True) -> Iterator[Optional[str]]:
     """
-    Yield the path of a private, throwaway copy of the configured cookies (None if there are none).
+    Yield the path of a private, throwaway copy of the configured cookies (None if there are none,
+    or if enabled is False).
 
     yt-dlp writes back to the cookie file it is given, so every use gets its own copy, which is
     removed afterwards. That avoids concurrent downloads clobbering one shared file.
     """
-    cookies = _configured_cookies()
+    cookies = _configured_cookies() if enabled else ''
     if not cookies:
         yield None
         return
@@ -101,8 +103,80 @@ def youtube_cookie_file() -> Iterator[Optional[str]]:
 
 
 _UNAVAILABLE = ('video unavailable', 'this video is not available', 'no longer available',
-                'has been removed', 'this video is private')
+                'has been removed', 'this video is private', 'private video')
 _NO_FORMATS = ('requested format is not available', 'no video formats found')
+
+
+@dataclass(frozen=True)
+class Strategy:
+    """One way of asking YouTube for a video."""
+    name: str
+    use_cookies: bool
+    extractor_args: Optional[dict] = None
+
+
+def download_strategies() -> List[Strategy]:
+    """
+    The ways to ask YouTube for a video, in the order to try them.
+
+    With cookies, YouTube can answer the signed-in web clients with streaming-only formats that
+    have no direct download link, so if those fail we fall back to the TV/Safari clients and
+    then to signed-out clients that need no proof-of-origin token.
+    """
+    if not cookies_configured():
+        return [Strategy('default clients', use_cookies=False)]
+    return [
+        Strategy('signed in, default clients', use_cookies=True),
+        Strategy('signed in, TV and Safari clients', use_cookies=True,
+                 extractor_args={'youtube': {'player_client': ['tv', 'web_safari']}}),
+        Strategy('signed out, clients that need no token', use_cookies=False,
+                 extractor_args={'youtube': {'player_client': ['android_vr', 'tv_simply', 'mweb', 'web_embedded']}}),
+    ]
+
+
+def is_video_gone(raw: Optional[str]) -> bool:
+    """True when the video itself is private/removed, so trying other ways of asking cannot help."""
+    lowered = _ANSI_CODES.sub('', raw or '').lower()
+    return any(marker in lowered for marker in _UNAVAILABLE)
+
+
+class DiagnosticLogger:
+    """
+    A yt-dlp logger that keeps its messages instead of printing them, so that when every way of
+    asking YouTube fails the server log can say why (yt-dlp's own explanation of what it tried).
+    """
+
+    _USEFUL = re.compile(r'\[youtube\]|\[jsc|\[pot\]|client|format|signature|challenge|sabr|po token|cookies',
+                         re.IGNORECASE)
+    _SKIP = re.compile(r'params:|Proxy map|videoplayback|Command-line|Encodings|Python |Extractor Plugins',
+                       re.IGNORECASE)
+
+    def __init__(self):
+        self.lines: List[str] = []
+
+    def debug(self, msg):
+        self.lines.append(str(msg))
+
+    def info(self, msg):
+        pass
+
+    def warning(self, msg):
+        self.lines.append(str(msg))
+
+    def error(self, msg):
+        self.lines.append(str(msg))
+
+    def summary(self, limit: int = 30) -> List[str]:
+        """The lines worth putting in a log: the useful ones, trimmed, with no repeats."""
+        seen, kept = set(), []
+        for line in self.lines:
+            line = _ANSI_CODES.sub('', line).strip()
+            line = line.splitlines()[0] if line else ''  # first line only: the rest is often a traceback
+            if not line or self._SKIP.search(line) or not self._USEFUL.search(line) or line in seen:
+                continue
+            seen.add(line)
+            kept.append(line[:260])
+        return kept[-limit:]
 
 
 def find_js_runtime() -> Optional[str]:

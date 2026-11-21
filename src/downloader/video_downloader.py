@@ -10,7 +10,8 @@ from typing import Dict, Optional
 import yt_dlp
 
 from ..utils import Config, print_info, print_success, print_error, print_warning
-from .youtube_access import youtube_cookie_file, is_retryable, find_js_runtime
+from .youtube_access import (youtube_cookie_file, is_retryable, find_js_runtime, download_strategies,
+                             is_video_gone, DiagnosticLogger, Strategy)
 
 
 class VideoDownloader:
@@ -23,14 +24,22 @@ class VideoDownloader:
         self._js_runtime = find_js_runtime()
         # Raw yt-dlp error from the last failed call, so callers can tell the user why
         self.last_error: Optional[str] = None
+        # The way of asking YouTube that last worked; downloads use the same one
+        self._strategy: Strategy = download_strategies()[0]
 
     @contextmanager
-    def _youtube_dl(self, ydl_opts: dict):
-        """A YoutubeDL that is signed in with the configured YouTube cookies, if there are any."""
-        with youtube_cookie_file() as cookie_path:
+    def _youtube_dl(self, ydl_opts: dict, strategy: Optional[Strategy] = None, logger=None):
+        """A YoutubeDL set up for one way of asking YouTube (signed in with the cookies, or not)."""
+        strategy = strategy or self._strategy
+        with youtube_cookie_file(enabled=strategy.use_cookies) as cookie_path:
             opts = dict(ydl_opts)
             if cookie_path:
                 opts['cookiefile'] = cookie_path
+            if strategy.extractor_args:
+                opts['extractor_args'] = strategy.extractor_args
+            if logger is not None:
+                opts['logger'] = logger
+                opts['verbose'] = True  # so the logger also receives yt-dlp's debug messages
             with yt_dlp.YoutubeDL(opts) as ydl:
                 yield ydl
 
@@ -48,26 +57,44 @@ class VideoDownloader:
         """
         Get video metadata without downloading.
 
+        Tries each way of asking YouTube in turn (see download_strategies) until one works, and
+        remembers it so the download uses the same one.
+
         Args:
             url: Video URL (YouTube, TikTok, Twitch, etc.)
 
         Returns:
             Dictionary with video information or None if failed
         """
+        self.last_error = None
+        print_info(f"Fetching video information from {url}...")
+
+        first_error = None
+        for strategy in download_strategies():
+            info, error = self._fetch_info(url, strategy)
+            if info:
+                self._strategy = strategy
+                return info
+            first_error = first_error or error
+            if is_video_gone(error):
+                break  # the video itself is private or removed; asking differently cannot help
+
+        # The first attempt's error is the most representative one to show the user
+        self.last_error = first_error
+        print_error(f"Failed to fetch video info: {first_error}")
+        return None
+
+    def _fetch_info(self, url: str, strategy: Strategy):
+        """One attempt at reading a video's metadata. Returns (info, None) or (None, error text)."""
         ydl_opts = {
             **self._base_ydl_opts(),
             'quiet': True,
-            # Keep yt-dlp's warnings (they go to the server log) so failures can be diagnosed
-            'no_warnings': False,
             'extract_flat': False,
         }
-
-        self.last_error = None
+        logger = DiagnosticLogger()
         try:
-            with self._youtube_dl(ydl_opts) as ydl:
-                print_info(f"Fetching video information from {url}...")
+            with self._youtube_dl(ydl_opts, strategy, logger) as ydl:
                 info = ydl.extract_info(url, download=False)
-
                 return {
                     'title': info.get('title', 'Unknown'),
                     'channel': info.get('uploader', info.get('channel', 'Unknown')),
@@ -80,12 +107,14 @@ class VideoDownloader:
                     'ext': info.get('ext', 'mp4'),
                     'description': info.get('description', ''),
                     'thumbnail': info.get('thumbnail', ''),
-                }
-
+                }, None
         except Exception as e:
-            self.last_error = str(e)
-            print_error(f"Failed to fetch video info: {str(e)}")
-            return None
+            error = str(e)
+            # Plain print: rich would treat the [youtube] tags in these lines as markup
+            print(f"[diag] '{strategy.name}' failed: {error[:200]}", flush=True)
+            for line in logger.summary():
+                print(f"[diag]    {line}", flush=True)
+            return None, error
 
     def download_video(self, url: str, output_filename: Optional[str] = None, max_retries: int = 3) -> Optional[str]:
         """
@@ -146,7 +175,7 @@ class VideoDownloader:
 
                 print_info(f"Downloading video: {info['title']}")
 
-                with self._youtube_dl(ydl_opts) as ydl:
+                with self._youtube_dl(ydl_opts, self._strategy) as ydl:
                     # extract_info with download=True returns info dict with filepath
                     result_info = ydl.extract_info(url, download=True)
 

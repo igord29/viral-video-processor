@@ -55,6 +55,12 @@ class Config:
     YOUTUBE_COOKIES = os.getenv('YOUTUBE_COOKIES', '')
     YOUTUBE_COOKIES_FILE = os.getenv('YOUTUBE_COOKIES_FILE', '')
 
+    # Web app login. With APP_PASSWORD set, the web app asks for it before showing anything;
+    # without it (local use) there is no login. SECRET_KEY signs the login cookie; when it is
+    # not set, the web app creates a key and keeps it in DATA_DIR.
+    APP_PASSWORD = os.getenv('APP_PASSWORD', '').strip()
+    SECRET_KEY = os.getenv('SECRET_KEY', '').strip()
+
     # Processing settings
     MAX_CLIP_DURATION = int(os.getenv('MAX_CLIP_DURATION', '60'))
     MIN_CLIP_DURATION = int(os.getenv('MIN_CLIP_DURATION', '15'))

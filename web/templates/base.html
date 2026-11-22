@@ -20,6 +20,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ static_version }}">
     
     {% block extra_css %}{% endblock %}
+
+    {% if login_enabled %}
+    <script>
+        // When the login has run out, the app answers 401: go to the login page, then come back here
+        (function () {
+            const originalFetch = window.fetch;
+            window.fetch = async function (...args) {
+                const response = await originalFetch.apply(this, args);
+                if (response.status === 401 && new URL(response.url).origin === window.location.origin) {
+                    const here = window.location.pathname + window.location.search;
+                    window.location.href = '{{ url_for("login") }}?next=' + encodeURIComponent(here);
+                }
+                return response;
+            };
+        })();
+    </script>
+    {% endif %}
 </head>
 <body>
     <!-- Navigation -->
@@ -35,7 +52,7 @@
                 <i class="fas fa-bars" id="menu-icon"></i>
             </button>
             
-            <ul class="nav-menu" id="nav-menu">
+            <ul class="nav-menu{% if login_enabled %} has-logout{% endif %}" id="nav-menu">
                 <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">
                     <i class="fas fa-home"></i> <span>Dashboard</span>
                 </a></li>
@@ -57,6 +74,15 @@
                 <li><a href="{{ url_for('clips_page') }}" class="nav-link {% if request.endpoint == 'clips_page' %}active{% endif %}">
                     <i class="fas fa-cut"></i> <span>Clips</span>
                 </a></li>
+                {% if login_enabled %}
+                <li>
+                    <form method="post" action="{{ url_for('logout') }}">
+                        <button type="submit" class="nav-link nav-logout">
+                            <i class="fas fa-right-from-bracket"></i> <span>Log out</span>
+                        </button>
+                    </form>
+                </li>
+                {% endif %}
             </ul>
         </div>
     </nav>

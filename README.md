@@ -195,6 +195,30 @@ it. The deploy log shows `Storage: persistent (/data)` when it is in use. Relati
 `/somewhere/else`) is used exactly as given and is not on the volume. On other hosts, set
 `DATA_DIR` to a folder that persists to get the same behavior.
 
+### Password for the web app (Railway)
+
+On Railway the web app has a public address, so without a password anyone who has the link can
+use it: start downloads with your YouTube cookies, watch your videos, and delete them. Set a
+password to close it:
+
+1. In Railway, open the service and go to **Variables**.
+2. Add a variable named `APP_PASSWORD` and type the password you want as its value. Pick a long
+   one, such as four or five unrelated words; the address is public, so short passwords get guessed.
+3. Railway redeploys. The deploy log shows `Login: ON (password required)`.
+4. Open the app. It now asks for the password before showing anything.
+
+Good to know:
+
+- A browser stays logged in for 30 days. **Log out** is at the end of the menu.
+- To change the password, change the variable. Every browser is logged out and needs the new one.
+- After 5 wrong passwords the login pauses for a few minutes. This stops password guessing.
+- Until `APP_PASSWORD` is set the app stays open to anyone with the link, and the deploy log says
+  `Login: OFF`. On your own computer you can leave it unset and there is no login.
+- With a volume attached (see above), you stay logged in across redeploys. Without one, either add
+  a `SECRET_KEY` variable holding a long random text, or expect to log in again after each redeploy.
+- Railway's health check uses `/health` (set in `railway.toml`). Like the login page, it answers
+  without a password; all it says is that the app is running.
+
 ### YouTube bot check ("Sign in to confirm you're not a bot")
 
 YouTube often refuses downloads that come from cloud servers such as Railway and shows this

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#000000">
+    <meta name="robots" content="noindex">
+    <title>Log in - Viral Video Processor</title>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ static_version }}">
+
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 26rem;
+            margin-bottom: 0;
+        }
+
+        .login-card .card-body {
+            padding: 2rem;
+        }
+
+        .login-brand {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            font-size: 1.375rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-brand img {
+            height: 40px;
+            width: auto;
+        }
+
+        .login-intro {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+
+        .login-error {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--error-color);
+            border-radius: 0.5rem;
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+        }
+
+        .login-error i {
+            margin-top: 0.3rem;
+        }
+
+        .login-submit {
+            width: 100%;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <main class="login-page">
+        <div class="card login-card">
+            <div class="card-body">
+                <div class="login-brand">
+                    <img src="{{ url_for('static', filename='images/5DLogo.gif') }}" alt="5D Media Logo">
+                    <span>Viral Video Processor</span>
+                </div>
+                <p class="login-intro">Enter the password to continue.</p>
+
+                {% if error %}
+                <div class="login-error" role="alert">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <span>{{ error }}</span>
+                </div>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('login') }}">
+                    <input type="hidden" name="next" value="{{ next_page }}">
+                    <div class="form-group">
+                        <label for="password"><i class="fas fa-lock"></i> Password</label>
+                        <input type="password" id="password" name="password" class="form-input"
+                               autocomplete="current-password" required autofocus>
+                    </div>
+                    <button type="submit" class="btn btn-primary login-submit">
+                        <i class="fas fa-right-to-bracket"></i> Log in
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

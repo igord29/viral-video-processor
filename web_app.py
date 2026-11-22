@@ -5,20 +5,25 @@ Viral Video Processor Web Application
 Beautiful web UI for downloading, analyzing, and processing viral videos.
 """
 
+import hmac
 import os
 import json
 import re
+import secrets
 import tempfile
 import time
 import uuid
 import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
-from flask import Flask, render_template, request, jsonify, send_file, url_for
+from flask import Flask, render_template, request, jsonify, send_file, url_for, redirect, session
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import whisper
 
 from src.downloader import VideoDownloader, BatchVideoDownloader
 from src.downloader.youtube_access import (describe_download_error, cookies_configured, tooling_summary,
@@ -32,7 +37,168 @@ app = Flask(__name__,
             static_folder='web/static')
 
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
-app.config['SECRET_KEY'] = os.urandom(24)
+
+
+def load_secret_key():
+    """
+    The key that signs the login cookie, and whether it survives a restart.
+
+    A key that changes logs everyone out, so it must not be made afresh on every start:
+    SECRET_KEY is used if set, otherwise a key is created once and kept in the persistent data
+    folder (the Railway volume). With neither, a new key is made on every start.
+    """
+    if Config.SECRET_KEY:
+        return Config.SECRET_KEY, True
+
+    if Config.DATA_DIR:
+        key_file = Path(Config.DATA_DIR) / '.secret_key'
+        try:
+            key = key_file.read_text(encoding='utf-8').strip() if key_file.exists() else ''
+            if len(key) < 32:
+                key = secrets.token_hex(32)
+                key_file.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # readable by us only
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(key)
+            return key, True
+        except OSError as e:
+            print(f"Could not keep the login key in {key_file}: {e}")
+
+    return secrets.token_hex(32), False
+
+
+class LoginSessionInterface(SecureCookieSessionInterface):
+    """Flask's signed session cookie, sent back only over HTTPS when the visitor arrived over HTTPS."""
+
+    def get_cookie_secure(self, app):
+        # Railway, like most hosts, handles HTTPS in front of the app and reports it in this header
+        forwarded_proto = request.headers.get('X-Forwarded-Proto', '').split(',')[0].strip().lower()
+        return request.is_secure or forwarded_proto == 'https'
+
+
+app.config['SECRET_KEY'], SECRET_KEY_IS_KEPT = load_secret_key()
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # how long a browser stays logged in
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # other websites cannot make requests as the logged-in owner
+app.session_interface = LoginSessionInterface()
+
+# Wrong passwords allowed per visitor, and from all visitors together, within the window below.
+# Past that, logins are refused until the window has passed, so the password cannot be guessed
+# by trying thousands of them.
+LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPTS_TOTAL = 30
+LOGIN_ATTEMPT_WINDOW_SECONDS = 300
+
+# Pages and routes that work without logging in. Everything else, including any route added
+# later, needs a login whenever APP_PASSWORD is set.
+OPEN_ENDPOINTS = {'static', 'login', 'health'}
+
+_failed_logins = []  # (time, visitor address) of each recent wrong password
+_failed_logins_lock = threading.Lock()
+
+
+def login_enabled() -> bool:
+    return bool(Config.APP_PASSWORD)
+
+
+def _login_token() -> str:
+    """What a logged-in browser's cookie holds. It follows the password, so changing APP_PASSWORD logs everyone out."""
+    return hmac.new(app.secret_key.encode('utf-8'), Config.APP_PASSWORD.encode('utf-8'), 'sha256').hexdigest()
+
+
+def is_logged_in() -> bool:
+    return hmac.compare_digest(str(session.get('auth', '')), _login_token())
+
+
+def _visitor_address() -> str:
+    # Railway passes the visitor's real address in X-Real-IP; anywhere else that header could be faked
+    if os.environ.get('RAILWAY_PROJECT_ID'):
+        return request.headers.get('X-Real-IP') or request.remote_addr or ''
+    return request.remote_addr or ''
+
+
+def try_password(password: str):
+    """Check a submitted password. Returns (correct, seconds to wait before trying again)."""
+    now = time.time()
+    visitor = _visitor_address()
+
+    with _failed_logins_lock:
+        _failed_logins[:] = [attempt for attempt in _failed_logins
+                             if now - attempt[0] < LOGIN_ATTEMPT_WINDOW_SECONDS]
+        own = [when for when, who in _failed_logins if who == visitor]
+
+        if len(own) >= LOGIN_ATTEMPTS:
+            return False, int(own[0] + LOGIN_ATTEMPT_WINDOW_SECONDS - now) + 1
+        if len(_failed_logins) >= LOGIN_ATTEMPTS_TOTAL:
+            return False, int(_failed_logins[0][0] + LOGIN_ATTEMPT_WINDOW_SECONDS - now) + 1
+
+        if hmac.compare_digest(password.encode('utf-8'), Config.APP_PASSWORD.encode('utf-8')):
+            _failed_logins[:] = [attempt for attempt in _failed_logins if attempt[1] != visitor]
+            return True, 0
+
+        _failed_logins.append((now, visitor))
+        return False, 0
+
+
+def _page_after_login(target) -> str:
+    """Where to go after logging in: the page that was asked for, but only if it is a page of this app."""
+    if (isinstance(target, str) and target.startswith('/') and not target.startswith('//')
+            and '\\' not in target and not any(ord(char) < 32 for char in target)):
+        return target
+    return url_for('index')
+
+
+@app.before_request
+def require_login():
+    """With APP_PASSWORD set, turn away every request that is not logged in."""
+    if not login_enabled() or request.endpoint in OPEN_ENDPOINTS or is_logged_in():
+        return None
+
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Please log in to continue.', 'login_required': True}), 401
+
+    asked_for = request.full_path.rstrip('?') if request.method == 'GET' else None
+    return redirect(url_for('login', next=asked_for if asked_for != '/' else None))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """The login page: one password, set in APP_PASSWORD."""
+    next_page = _page_after_login(request.values.get('next'))
+    if not login_enabled() or is_logged_in():
+        return redirect(next_page)
+
+    error, status = None, 200
+    if request.method == 'POST':
+        correct, wait_seconds = try_password(request.form.get('password', '').strip())
+        if correct:
+            session.clear()
+            session.permanent = True
+            session['auth'] = _login_token()
+            return redirect(next_page)
+        if wait_seconds:
+            minutes = -(-wait_seconds // 60)
+            error = (f"Too many wrong passwords. Please wait {minutes} minute{'s' if minutes != 1 else ''} "
+                     "and try again.")
+            status = 429
+        else:
+            error, status = 'That password is not right. Please try again.', 401
+
+    return render_template('login.html', error=error, next_page=next_page), status
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/health')
+def health():
+    """
+    Tells Railway the app has started. Railway's health check needs a 2xx answer from a page
+    that works without logging in, which the dashboard no longer is.
+    """
+    return jsonify({'status': 'ok'})
 
 
 def get_static_version():
@@ -52,7 +218,7 @@ app.config['STATIC_VERSION'] = get_static_version()
 
 @app.context_processor
 def inject_static_version():
-    return {'static_version': app.config['STATIC_VERSION']}
+    return {'static_version': app.config['STATIC_VERSION'], 'login_enabled': login_enabled()}
 
 # Store processing status
 processing_status = {}
@@ -74,7 +240,7 @@ def save_analysis_results(task_id: str, data: dict, video_path: str):
         # Create filename based on video name and task ID
         video_name = Path(video_path).stem
         safe_name = Config.get_safe_filename(video_name)[:50]
-        filename = f"{safe_name}_{task_id}.json"
+        filename = Config.get_safe_filename(f"{safe_name}_{task_id}") + ".json"  # task_id comes from the request
         filepath = ANALYSIS_RESULTS_PATH / filename
         
         # Add filepath to data
@@ -135,6 +301,30 @@ def get_recent_analyses(limit: int = 20):
 
 # Load existing analyses on startup
 analysis_results.update(load_saved_analyses())
+
+
+def find_library_video(video_path):
+    """
+    Locate a video named in a request. Returns (path, None), or (None, error response) when it
+    is missing or is not inside the downloads or videos folder.
+
+    A request must never be able to point the app at any other file on the server, so every
+    route that is given a video path goes through here and then uses only the returned path.
+    """
+    if not video_path or not isinstance(video_path, str):
+        return None, (jsonify({'error': 'Video path is required'}), 400)
+
+    try:
+        candidate = Path(video_path).resolve()  # follows ".." and links to the file's real location
+    except (OSError, ValueError, RuntimeError):
+        candidate = None
+
+    if candidate is None or not any(folder.resolve() in candidate.parents
+                                    for folder in (Config.DOWNLOAD_PATH, Config.VIDEO_PATH)):
+        return None, (jsonify({'error': 'That file is not in the video library'}), 403)
+    if not candidate.is_file():
+        return None, (jsonify({'error': 'Video not found'}), 404)
+    return candidate, None
 
 
 @app.route('/')
@@ -391,15 +581,20 @@ def analyze_video():
     """Analyze video for viral clips."""
     try:
         data = request.get_json()
-        video_path = data.get('video_path')
         model_size = data.get('model', 'base')
         task_id = data.get('task_id', datetime.now().strftime('%Y%m%d%H%M%S'))
         min_clip_duration = data.get('min_clip_duration', Config.MIN_CLIP_DURATION)
         max_clip_duration = data.get('max_clip_duration', Config.MAX_CLIP_DURATION)
-        
-        if not video_path:
-            return jsonify({'error': 'Video path is required'}), 400
-        
+
+        video, problem = find_library_video(data.get('video_path'))
+        if problem:
+            return problem
+        video_path = str(video)
+
+        # Whisper loads any other value as a model file from disk, so only its own model names are accepted
+        if model_size not in whisper.available_models():
+            return jsonify({'error': 'Unknown transcription model'}), 400
+
         # Initialize status
         processing_status[task_id] = {
             'status': 'analyzing',
@@ -689,17 +884,13 @@ def delete_video():
     """Delete a video file."""
     try:
         data = request.get_json()
-        video_path = data.get('path')
-        
-        if not video_path:
-            return jsonify({'error': 'Video path is required'}), 400
-        
-        path = Path(video_path)
-        if path.exists():
-            path.unlink()
-            return jsonify({'success': True, 'message': 'Video deleted'})
-        else:
-            return jsonify({'error': 'Video not found'}), 404
+
+        path, problem = find_library_video(data.get('path'))
+        if problem:
+            return problem
+
+        path.unlink()
+        return jsonify({'success': True, 'message': 'Video deleted'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -709,7 +900,6 @@ def generate_clip():
     """Generate a video clip from start to end time with optional aspect ratio conversion."""
     try:
         data = request.get_json()
-        video_path = data.get('video_path')
         start_time = data.get('start_time')
         end_time = data.get('end_time')
         clip_index = data.get('clip_index', 1)
@@ -717,9 +907,14 @@ def generate_clip():
         resize_mode = data.get('resize_mode', 'fit')  # 'fit' (black bars) or 'crop' (fill)
         target_duration = data.get('target_duration')  # Optional custom duration
         
-        if not all([video_path, start_time is not None, end_time is not None]):
+        if not all([data.get('video_path'), start_time is not None, end_time is not None]):
             return jsonify({'error': 'Missing required parameters'}), 400
-        
+
+        video, problem = find_library_video(data.get('video_path'))
+        if problem:
+            return problem
+        video_path = str(video)
+
         # Import moviepy
         try:
             from moviepy.editor import VideoFileClip
@@ -747,7 +942,8 @@ def generate_clip():
         # Add duration
         parts.append(f"{int(actual_duration)}s")
         
-        output_filename = "_".join(parts) + ".mp4"
+        # The parts come from the request, so make sure the name cannot lead outside the clips folder
+        output_filename = Config.get_safe_filename("_".join(parts)) + ".mp4"
         output_path = Config.CLIPS_PATH / output_filename
         
         # Extract clip - handle both moviepy 1.x and 2.x
@@ -966,11 +1162,15 @@ def export_all_clips():
         if not results:
             return jsonify({'error': 'Analysis results not found'}), 404
         
-        video_path = results.get('video_path')
         clips_data = results.get('clips', [])
         
         if not clips_data:
             return jsonify({'error': 'No clips found in analysis'}), 400
+
+        video, problem = find_library_video(results.get('video_path'))
+        if problem:
+            return problem
+        video_path = str(video)
         
         # Import moviepy
         try:
@@ -1002,7 +1202,7 @@ def export_all_clips():
                     parts.append(resize_mode)
                 parts.append(f"{int(end_time - start_time)}s")
                 
-                output_filename = "_".join(parts) + ".mp4"
+                output_filename = Config.get_safe_filename("_".join(parts)) + ".mp4"
                 output_path = Config.CLIPS_PATH / output_filename
                 
                 # Skip if already exists
@@ -1129,11 +1329,12 @@ def download_clips_zip():
 def delete_clip(filename):
     """Delete a clip file."""
     try:
-        clip_path = Config.CLIPS_PATH / filename
-        if clip_path.exists():
-            clip_path.unlink()
-            return jsonify({'success': True, 'message': 'Clip deleted'})
-        return jsonify({'error': 'Clip not found'}), 404
+        clip_path = safe_join(str(Config.CLIPS_PATH), filename)
+        if not clip_path or not os.path.isfile(clip_path):
+            return jsonify({'error': 'Clip not found'}), 404
+
+        os.remove(clip_path)
+        return jsonify({'success': True, 'message': 'Clip deleted'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1161,11 +1362,19 @@ if __name__ == '__main__':
     print("\nAPI Status:")
     print(f"   Anthropic API: {'Configured' if Config.ANTHROPIC_API_KEY else 'Not set'}")
     print(f"   YouTube cookies: {'Configured' if cookies_configured() else 'Not set (YouTube may block this server with a bot check)'}")
+    if not login_enabled():
+        print("   Login: OFF - anyone who can open this address can use the app (set APP_PASSWORD to require a password)")
+    elif SECRET_KEY_IS_KEPT:
+        print("   Login: ON (password required)")
+    else:
+        print("   Login: ON (password required) - logins are lost on every restart (attach a volume or set SECRET_KEY)")
     print(f"   Downloader: {tooling_summary()}")
     print("\n" + "="*60 + "\n")
     
     # Use PORT from environment (Railway) or default to 5000
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    # Debug mode adds Flask's interactive debugger, which answers before the login check does,
+    # so it is never turned on when the app is password protected
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development' and not login_enabled()
     
     app.run(debug=debug, host='0.0.0.0', port=port, threaded=True)

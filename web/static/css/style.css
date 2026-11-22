@@ -133,6 +133,28 @@ body {
     color: white;
 }
 
+/* Log out is a button (it submits a form), made to look like the other menu links */
+.nav-logout {
+    width: 100%;
+    background: none;
+    border: none;
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* With Log out the menu has an eighth item: tighten the items so the row is no wider than before */
+@media (min-width: 769px) {
+    .nav-menu.has-logout {
+        gap: 0.75rem;
+    }
+
+    .nav-menu.has-logout .nav-link {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}
+
 /* Main Content */
 .main-content {
     max-width: 1400px;

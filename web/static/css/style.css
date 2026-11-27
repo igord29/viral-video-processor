@@ -685,6 +685,120 @@ body {
     flex-shrink: 0;
 }
 
+/* Upload Videos */
+.upload-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 2rem 1rem;
+    text-align: center;
+    background: var(--bg-secondary);
+    border: 2px dashed var(--border-accent);
+    border-radius: 0.75rem;
+    transition: var(--transition);
+}
+
+.upload-drop.dragging {
+    border-color: var(--primary-color);
+    background: rgba(14, 165, 233, 0.08);
+}
+
+.upload-drop > i {
+    font-size: 2.25rem;
+    color: var(--primary-color);
+}
+
+.upload-drop-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.upload-drop-note {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.upload-drop-note:empty {
+    display: none;
+}
+
+.upload-pending {
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--warning-color);
+    border-radius: 0.5rem;
+    background: rgba(245, 158, 11, 0.08);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.upload-pending i {
+    margin-top: 0.2rem;
+    color: var(--warning-color);
+}
+
+.upload-progress {
+    height: 6px;
+    margin: 0.4rem 0 0.3rem;
+    background: var(--bg-color);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.upload-progress-fill {
+    width: 0;
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.3s ease;
+}
+
+.batch-item.completed .upload-progress-fill {
+    background: var(--success-color);
+}
+
+.batch-item.paused .upload-progress-fill,
+.batch-item.stopped .upload-progress-fill {
+    background: var(--warning-color);
+}
+
+.batch-item.error .upload-progress-fill {
+    background: var(--error-color);
+}
+
+.batch-item.uploading .batch-item-icon,
+.batch-item.checking .batch-item-icon {
+    color: var(--primary-color);
+}
+
+.batch-item.paused .batch-item-icon,
+.batch-item.stopped .batch-item-icon {
+    color: var(--warning-color);
+}
+
+.batch-item-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 0.5rem;
+}
+
+@media (max-width: 480px) {
+    .upload-item {
+        flex-wrap: wrap;
+    }
+
+    .upload-item .batch-item-text {
+        flex-basis: calc(100% - 2rem);
+    }
+
+    .upload-item .batch-item-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
 /* Page Layout */
 .page-container {
     max-width: 1400px;

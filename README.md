@@ -219,7 +219,41 @@ Good to know:
 - Railway's health check uses `/health` (set in `railway.toml`). Like the login page, it answers
   without a password; all it says is that the app is running.
 
+### Uploading videos from your computer or phone
+
+The Download page has an **Upload Videos From Your Computer or Phone** box. Choose one or more
+videos (or drag them onto the box) and they go into the Videos library, ready to analyze and clip.
+
+- Large files are fine. Each video is sent in small pieces, so a dropped connection only pauses the
+  upload, and it carries on by itself. If the page gets closed, open the Download page again and
+  choose the same video: it continues from where it stopped. Unfinished uploads are deleted after
+  3 days.
+- Keep the page open while videos upload. On a phone the page keeps the screen on while it uploads,
+  because phones stop uploading when the screen locks.
+- Accepted types: MP4, MOV (iPhone videos), M4V, MKV, AVI and WEBM. In the Videos library, uploads
+  show the folder "videos" and downloads from links show "downloads".
+- Uploads are kept on the Railway volume (see "Persistent storage" above), so they take up its
+  space. The upload box shows how much is left, and a video that does not fit is refused before it
+  starts. To make room, delete videos or clips you no longer need, or make the volume bigger in
+  Railway (open the volume, then its settings).
+
+### Your own YouTube videos, without cookies
+
+For a video on your own channel whose original file you no longer have, get a copy from YouTube
+once and upload it. No cookies are involved and YouTube's bot check never comes into it:
+
+- **YouTube Studio:** sign in, open **Content**, point to the video, then **⋮ (Options)** >
+  **Download**. This gives an MP4 in 720p or 360p, and each video can be downloaded 5 times a day.
+- **Google Takeout** (takeout.google.com): select only **YouTube and YouTube Music**, with videos
+  included. It exports every video you have uploaded as one archive, which can be large.
+
+Then upload the file on the Download page. From then on the video is in the library, and you can
+analyze it and cut clips from it as often as you like.
+
 ### YouTube bot check ("Sign in to confirm you're not a bot")
+
+For your own videos, the upload route above avoids this problem entirely. The steps below are only
+needed for downloading from YouTube links.
 
 YouTube often refuses downloads that come from cloud servers such as Railway and shows this
 message instead of the video. It affects every video, not just one. The fix is to give the app

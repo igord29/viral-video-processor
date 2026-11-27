@@ -457,14 +457,14 @@
     let currentVideoPath = null;
 
     document.addEventListener('DOMContentLoaded', function() {
-        loadVideos();
-        
-        // Check if coming from download page
-        const savedVideoPath = localStorage.getItem('videoPath');
-        if (savedVideoPath) {
-            document.getElementById('video-select').value = savedVideoPath;
-            localStorage.removeItem('videoPath');
-        }
+        // Coming from the Download, Videos or Dashboard page: select that video once the list has loaded
+        loadVideos().then(() => {
+            const savedVideoPath = localStorage.getItem('videoPath');
+            if (savedVideoPath) {
+                document.getElementById('video-select').value = savedVideoPath;
+                localStorage.removeItem('videoPath');
+            }
+        });
     });
 
     function setClipDuration(min, max) {

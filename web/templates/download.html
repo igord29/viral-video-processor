@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Download Video - Viral Video Processor{% endblock %}
+{% block title %}Download or Upload Videos - Viral Video Processor{% endblock %}
 
 {% block content %}
 <div class="page-container">
     <div class="page-header">
         <h1>
             <i class="fas fa-download"></i>
-            Download Video
+            Download or Upload Videos
         </h1>
-        <p>Download videos from YouTube, TikTok, Twitch, and more</p>
+        <p>Download videos from a link, or upload them from your computer or phone</p>
     </div>
 
     <div class="content-grid">
@@ -114,6 +114,39 @@
                 </div>
             </div>
 
+            <!-- Upload Videos -->
+            <div class="card" id="upload-card">
+                <div class="card-header">
+                    <h3><i class="fas fa-upload"></i> Upload Videos From Your Computer or Phone</h3>
+                </div>
+                <div class="card-body">
+                    <div class="upload-drop" id="upload-drop">
+                        <i class="fas fa-cloud-arrow-up"></i>
+                        <div class="upload-drop-title">Drop videos here, or</div>
+                        <button type="button" class="btn btn-primary" id="upload-choose">
+                            <i class="fas fa-folder-open"></i> Choose Videos
+                        </button>
+                        <div class="upload-drop-note">MP4, MOV, M4V, MKV, AVI or WEBM. Large files are fine.</div>
+                        <div class="upload-drop-note" id="upload-space"></div>
+                        <input type="file" id="upload-input" multiple hidden
+                               accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm">
+                    </div>
+                    <small class="form-help">
+                        Keep this page open while videos upload. If the connection drops, the upload
+                        carries on by itself. If the page gets closed, choose the same video again and
+                        it continues from where it stopped.
+                    </small>
+                    <div id="upload-pending" class="upload-pending" style="display: none;"></div>
+
+                    <div id="upload-list" class="batch-list"></div>
+                    <div id="upload-finished" class="button-group" style="display: none;">
+                        <a class="btn btn-primary" href="{{ url_for('videos_page') }}">
+                            <i class="fas fa-video"></i> Open Videos Library
+                        </a>
+                    </div>
+                </div>
+            </div>
+
             <!-- Download Multiple Videos -->
             <div class="card">
                 <div class="card-header">
@@ -180,6 +213,10 @@
                         <li>
                             <i class="fas fa-check"></i>
                             Paste a list of links to download several at once
+                        </li>
+                        <li>
+                            <i class="fas fa-check"></i>
+                            Upload your own videos, even big ones, from a computer or phone
                         </li>
                         <li>
                             <i class="fas fa-check"></i>
@@ -553,8 +590,436 @@
         document.getElementById('batch-progress').style.display = 'none';
     }
 
+    // ---- Upload Videos ----
+    // Each video is sent in pieces (Railway ends any request that takes over 5 minutes to send).
+    // The server keeps what has arrived, so an upload can carry on after a dropped connection,
+    // and even after the page was closed: choosing the same file again continues it.
+    const PENDING_UPLOADS_KEY = 'pendingUploads';  // file fingerprint -> {id, name}
+    const UPLOAD_RETRIES = 8;
+    const UPLOAD_ICONS = {
+        queued: 'fas fa-clock',
+        uploading: 'fas fa-circle-notch fa-spin',
+        checking: 'fas fa-circle-notch fa-spin',
+        paused: 'fas fa-pause-circle',
+        stopped: 'fas fa-exclamation-circle',
+        completed: 'fas fa-check-circle',
+        error: 'fas fa-times-circle'
+    };
+    const ACTIVE_UPLOAD = ['queued', 'uploading', 'checking', 'paused'];
+
+    let uploadChunkSize = 8 * 1024 * 1024;
+    let uploadExtensions = ['.mp4', '.mov', '.m4v', '.mkv', '.avi', '.webm'];
+    const uploadItems = [];
+    let uploadRunning = false;
+    let wakeLock = null;
+
+    function formatBytes(bytes) {
+        if (!bytes) return '0 MB';
+        if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(1) + ' GB';
+        return Math.max(0.1, bytes / 1024 ** 2).toFixed(1) + ' MB';
+    }
+
+    function formatTimeLeft(seconds) {
+        if (seconds < 60) return 'less than a minute left';
+        if (seconds < 3600) return `about ${Math.round(seconds / 60)} min left`;
+        const hours = Math.floor(seconds / 3600);
+        return `about ${hours} hr ${Math.round((seconds % 3600) / 60)} min left`;
+    }
+
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function fileFingerprint(file) {
+        return `${file.name}|${file.size}|${file.lastModified}`;
+    }
+
+    function pendingUploads() {
+        try {
+            return JSON.parse(localStorage.getItem(PENDING_UPLOADS_KEY)) || {};
+        } catch {
+            return {};
+        }
+    }
+
+    function setPendingUpload(fingerprint, value) {
+        const pending = pendingUploads();
+        if (value) pending[fingerprint] = value; else delete pending[fingerprint];
+        try {
+            localStorage.setItem(PENDING_UPLOADS_KEY, JSON.stringify(pending));
+        } catch { /* resuming after a closed page is a convenience */ }
+        showPendingNote();
+    }
+
+    function showPendingNote() {
+        const inList = new Set(uploadItems.map(item => item.fingerprint));
+        const names = Object.entries(pendingUploads())
+            .filter(([fingerprint]) => !inList.has(fingerprint))
+            .map(([, value]) => value.name);
+        const note = document.getElementById('upload-pending');
+        if (!names.length) {
+            note.style.display = 'none';
+            return;
+        }
+        note.replaceChildren();
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-circle-info';
+        const text = document.createElement('span');
+        text.textContent = `Not finished: ${names.join(', ')}. Choose ${names.length === 1 ? 'it' : 'them'} again to carry on from where ${names.length === 1 ? 'it' : 'they'} stopped.`;
+        note.append(icon, text);
+        note.style.display = 'flex';
+    }
+
+    // fetch() for the small JSON requests; network failures come back as status 0
+    async function uploadApi(method, url, body) {
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: body ? { 'Content-Type': 'application/json' } : {},
+                body: body ? JSON.stringify(body) : undefined
+            });
+            const data = await response.json().catch(() => ({}));
+            return { ok: response.ok, status: response.status, data };
+        } catch {
+            return { ok: false, status: 0, data: {} };
+        }
+    }
+
+    // One piece, with XMLHttpRequest because it reports progress while sending
+    function sendPiece(item, start, end) {
+        return new Promise(resolve => {
+            const xhr = new XMLHttpRequest();
+            item.xhr = xhr;
+            xhr.open('PUT', `/api/uploads/${item.uploadId}?offset=${start}`);
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.timeout = 6 * 60 * 1000;
+            xhr.upload.onprogress = event => {
+                item.inFlight = event.loaded;
+                renderUploadItem(item);
+            };
+            const done = result => {
+                item.xhr = null;
+                item.inFlight = 0;
+                resolve(result);
+            };
+            xhr.onload = () => {
+                let data = {};
+                try { data = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+                done({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+            };
+            xhr.onerror = () => done({ ok: false, status: 0, data: {} });
+            xhr.ontimeout = () => done({ ok: false, status: 0, data: {} });
+            xhr.onabort = () => done({ ok: false, status: -1, data: {} });
+            xhr.send(item.file.slice(start, end));
+        });
+    }
+
+    // What has arrived stays on the server: after logging in, choosing the same videos carries on
+    let leavingForLogin = false;
+    window.addEventListener('login-expired', () => { leavingForLogin = true; });
+
+    function goToLogin() {
+        leavingForLogin = true;
+        window.location.href = '/login?next=' + encodeURIComponent('/download');
+    }
+
+    function addUploadFiles(fileList) {
+        const files = Array.from(fileList || []);
+        for (const file of files) {
+            const fingerprint = fileFingerprint(file);
+            if (uploadItems.some(item => item.fingerprint === fingerprint && item.status !== 'error')) {
+                continue;  // already in the list
+            }
+            const item = { file, fingerprint, status: 'queued', sent: 0, inFlight: 0, note: 'Waiting', row: null };
+            const extension = '.' + file.name.split('.').pop().toLowerCase();
+            if (!file.name.includes('.') || !uploadExtensions.includes(extension)) {
+                item.status = 'error';
+                item.note = 'This is not a video type the app can use (MP4, MOV, M4V, MKV, AVI or WEBM).';
+            } else if (file.size === 0) {
+                item.status = 'error';
+                item.note = 'This file is empty.';
+            }
+            uploadItems.push(item);
+            renderUploadItem(item);
+        }
+        document.getElementById('upload-input').value = '';
+        showPendingNote();
+        processUploads();
+    }
+
+    async function processUploads() {
+        if (uploadRunning) return;
+        uploadRunning = true;
+        document.getElementById('upload-finished').style.display = 'none';
+        await keepScreenOn();
+
+        let item;
+        while ((item = uploadItems.find(candidate => candidate.status === 'queued'))) {
+            await uploadOne(item);
+        }
+
+        uploadRunning = false;
+        releaseScreen();
+        loadUploadSpace();
+
+        const done = uploadItems.filter(candidate => candidate.status === 'completed').length;
+        const problems = uploadItems.filter(candidate => ['error', 'stopped'].includes(candidate.status)).length;
+        if (done) {
+            document.getElementById('upload-finished').style.display = 'flex';
+        }
+        if (done || problems) {
+            showToast(problems ? `Uploaded ${done}, ${problems} need${problems === 1 ? 's' : ''} attention`
+                               : `Uploaded ${done} video${done === 1 ? '' : 's'} to your library`,
+                      problems ? 'error' : 'success');
+        }
+    }
+
+    function setUploadState(item, status, note) {
+        item.status = status;
+        item.note = note;
+        renderUploadItem(item);
+    }
+
+    async function uploadOne(item) {
+        const file = item.file;
+        item.cancelled = false;
+        setUploadState(item, 'uploading', 'Starting...');
+
+        // Carry on with an upload the server already has part of, or start a new one
+        const pending = pendingUploads()[item.fingerprint];
+        item.uploadId = null;
+        if (pending) {
+            const known = await uploadApi('GET', `/api/uploads/${pending.id}`);
+            if (known.ok) {
+                item.uploadId = pending.id;
+                item.sent = known.data.received;
+            } else if (known.status === 401) {
+                return goToLogin();
+            } else if (known.status !== 404) {
+                return setUploadState(item, 'stopped', 'Could not reach the server. Press Resume to try again.');
+            }
+        }
+        if (!item.uploadId) {
+            const started = await uploadApi('POST', '/api/uploads', { name: file.name, size: file.size });
+            if (started.status === 401) return goToLogin();
+            if (!started.ok) {
+                return started.status === 0
+                    ? setUploadState(item, 'stopped', 'Could not reach the server. Press Resume to try again.')
+                    : setUploadState(item, 'error', started.data.error || 'The upload could not start.');
+            }
+            item.uploadId = started.data.upload_id;
+            item.sent = 0;
+            uploadChunkSize = started.data.chunk_size || uploadChunkSize;
+            setPendingUpload(item.fingerprint, { id: item.uploadId, name: file.name });
+        }
+
+        // Send the pieces
+        item.resumedFrom = item.sent;
+        item.startedAt = Date.now();
+        let failures = 0;
+        while (item.sent < file.size) {
+            if (item.cancelled) return;
+            setUploadState(item, 'uploading', '');
+            const end = Math.min(item.sent + uploadChunkSize, file.size);
+            const result = await sendPiece(item, item.sent, end);
+            if (item.cancelled) return;
+
+            if (result.ok) {
+                item.sent = result.data.received;
+                failures = 0;
+                continue;
+            }
+            if (result.status === 409 && Number.isFinite(result.data.received)) {
+                item.sent = result.data.received;  // the server says where to carry on
+                continue;
+            }
+            if (result.status === 401) return goToLogin();
+            if (result.status === 404) {
+                setPendingUpload(item.fingerprint, null);
+                return setUploadState(item, 'error', 'The server no longer has this upload. Choose the video again to start over.');
+            }
+
+            // Connection or server trouble: wait a little longer each time, then carry on
+            failures += 1;
+            if (failures > UPLOAD_RETRIES) {
+                return setUploadState(item, 'stopped', 'The connection kept failing. Press Resume to carry on from where it stopped.');
+            }
+            const waitSeconds = Math.min(60, 2 ** failures);
+            for (let left = waitSeconds; left > 0; left--) {
+                if (item.cancelled) return;
+                setUploadState(item, 'paused', `Connection problem. Trying again in ${left} s...`);
+                await sleep(1000);
+            }
+            const known = await uploadApi('GET', `/api/uploads/${item.uploadId}`);
+            if (known.ok) item.sent = known.data.received;
+        }
+
+        // Every piece is there: the server checks the video and adds it to the library
+        setUploadState(item, 'checking', 'Checking the video...');
+        const finished = await uploadApi('POST', `/api/uploads/${item.uploadId}/finish`);
+        if (finished.status === 401) return goToLogin();
+        if (finished.ok) {
+            setPendingUpload(item.fingerprint, null);
+            item.path = finished.data.path;
+            item.filename = finished.data.filename;
+            return setUploadState(item, 'completed', `Saved to your Videos library as ${finished.data.filename}`);
+        }
+        if (finished.status === 0 || finished.status === 409 || finished.status >= 500) {
+            return setUploadState(item, 'stopped', 'The last step did not finish. Press Resume to try again.');
+        }
+        setPendingUpload(item.fingerprint, null);
+        setUploadState(item, 'error', finished.data.error || 'The video could not be added to the library.');
+    }
+
+    async function cancelUpload(item) {
+        item.cancelled = true;
+        if (item.xhr) item.xhr.abort();
+        if (item.uploadId) {
+            await uploadApi('DELETE', `/api/uploads/${item.uploadId}`);
+        }
+        setPendingUpload(item.fingerprint, null);
+        uploadItems.splice(uploadItems.indexOf(item), 1);
+        if (item.row) item.row.remove();
+        loadUploadSpace();
+    }
+
+    function resumeUpload(item) {
+        setUploadState(item, 'queued', 'Waiting');
+        processUploads();
+    }
+
+    function analyzeUploaded(item) {
+        localStorage.setItem('videoPath', item.path);
+        window.location.href = '{{ url_for("analyze_page") }}';
+    }
+
+    function uploadNote(item) {
+        if (item.status !== 'uploading') return item.note;
+        const size = item.file.size;
+        const done = Math.min(size, item.sent + item.inFlight);
+        let note = `Uploading ${Math.floor(done / size * 100)}% · ${formatBytes(done)} of ${formatBytes(size)}`;
+        const seconds = (Date.now() - item.startedAt) / 1000;
+        const speed = (done - item.resumedFrom) / seconds;
+        if (seconds > 5 && speed > 0) {
+            note += ` · ${formatTimeLeft((size - done) / speed)}`;
+        }
+        return note;
+    }
+
+    function renderUploadItem(item) {
+        if (!item.row) {
+            const row = document.createElement('div');
+            const icon = document.createElement('i');
+            const text = document.createElement('div');
+            text.className = 'batch-item-text';
+            const title = document.createElement('div');
+            title.className = 'batch-item-title';
+            title.textContent = item.file.name;  // set as text: file names can contain anything
+            title.title = item.file.name;
+            const bar = document.createElement('div');
+            bar.className = 'upload-progress';
+            const fill = document.createElement('div');
+            fill.className = 'upload-progress-fill';
+            bar.appendChild(fill);
+            const note = document.createElement('div');
+            note.className = 'batch-item-note';
+            text.append(title, bar, note);
+            const actions = document.createElement('div');
+            actions.className = 'batch-item-actions';
+            row.append(icon, text, actions);
+            item.row = row;
+            item.parts = { icon, fill, note, actions };
+            document.getElementById('upload-list').appendChild(row);
+        }
+
+        const { icon, fill, note, actions } = item.parts;
+        item.row.className = `batch-item upload-item ${item.status}`;
+        icon.className = `batch-item-icon ${UPLOAD_ICONS[item.status]}`;
+        const progress = item.status === 'completed' ? 1
+            : (item.sent + item.inFlight) / Math.max(1, item.file.size);
+        fill.style.width = `${Math.min(100, progress * 100)}%`;
+        note.textContent = uploadNote(item);
+
+        // Rebuild the buttons only when the state changes, not on every progress update
+        if (actions.dataset.status === item.status) return;
+        actions.dataset.status = item.status;
+        actions.replaceChildren();
+        const button = (label, iconClass, className, onClick) => {
+            const element = document.createElement('button');
+            element.type = 'button';
+            element.className = `btn btn-sm ${className}`;
+            element.innerHTML = `<i class="${iconClass}"></i> `;
+            element.append(label);
+            element.addEventListener('click', onClick);
+            actions.appendChild(element);
+        };
+        if (['queued', 'uploading', 'paused', 'stopped'].includes(item.status)) {
+            if (item.status === 'stopped') button('Resume', 'fas fa-play', 'btn-primary', () => resumeUpload(item));
+            button('Cancel', 'fas fa-times', 'btn-secondary', () => cancelUpload(item));
+        } else if (item.status === 'completed') {
+            button('Analyze', 'fas fa-chart-line', 'btn-primary', () => analyzeUploaded(item));
+        } else if (item.status === 'error') {
+            button('Remove', 'fas fa-times', 'btn-secondary', () => {
+                uploadItems.splice(uploadItems.indexOf(item), 1);
+                item.row.remove();
+            });
+        }
+    }
+
+    async function loadUploadSpace() {
+        const settings = await uploadApi('GET', '/api/uploads');
+        if (!settings.ok) return;
+        uploadChunkSize = settings.data.chunk_size || uploadChunkSize;
+        uploadExtensions = settings.data.extensions || uploadExtensions;
+        document.getElementById('upload-space').textContent =
+            `Space left on the server: ${formatBytes(settings.data.free_bytes)}`;
+    }
+
+    // Phones stop sending when the screen turns off, so keep it on while uploading
+    async function keepScreenOn() {
+        try {
+            if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+        } catch { /* not allowed here: uploads still work while the screen stays on */ }
+    }
+
+    function releaseScreen() {
+        if (wakeLock) wakeLock.release().catch(() => {});
+        wakeLock = null;
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (uploadRunning && document.visibilityState === 'visible') keepScreenOn();
+    });
+
+    window.addEventListener('beforeunload', event => {
+        if (!leavingForLogin && uploadItems.some(item => ACTIVE_UPLOAD.includes(item.status))) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
+
+    function setUpUploads() {
+        const input = document.getElementById('upload-input');
+        const drop = document.getElementById('upload-drop');
+        document.getElementById('upload-choose').addEventListener('click', () => input.click());
+        input.addEventListener('change', () => addUploadFiles(input.files));
+
+        ['dragenter', 'dragover'].forEach(name => drop.addEventListener(name, event => {
+            event.preventDefault();
+            drop.classList.add('dragging');
+        }));
+        ['dragleave', 'drop'].forEach(name => drop.addEventListener(name, event => {
+            event.preventDefault();
+            drop.classList.remove('dragging');
+        }));
+        drop.addEventListener('drop', event => addUploadFiles(event.dataTransfer.files));
+
+        loadUploadSpace();
+        showPendingNote();
+    }
+
     // Check for URL from search page
     document.addEventListener('DOMContentLoaded', function() {
+        setUpUploads();
+
         const savedUrl = localStorage.getItem('downloadUrl');
         if (savedUrl) {
             document.getElementById('video-url').value = savedUrl;

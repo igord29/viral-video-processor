@@ -31,6 +31,7 @@ from src.downloader.youtube_access import (describe_download_error, cookies_conf
 from src.transcription import WhisperTranscriber
 from src.analysis import EngagementAnalyzer, AudioAnalyzer
 from src.utils import Config, console
+from src.utils import uploads
 
 app = Flask(__name__, 
             template_folder='web/templates',
@@ -815,7 +816,7 @@ def list_videos():
         for path in [Config.DOWNLOAD_PATH, Config.VIDEO_PATH]:
             if path.exists():
                 for video_file in path.glob('*.*'):
-                    if video_file.suffix.lower() in ['.mp4', '.mkv', '.avi', '.mov', '.webm']:
+                    if video_file.suffix.lower() in uploads.VIDEO_EXTENSIONS:
                         videos.append({
                             'name': video_file.name,
                             'path': str(video_file),
@@ -893,6 +894,80 @@ def delete_video():
         return jsonify({'success': True, 'message': 'Video deleted'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ---- Uploading videos from the computer or phone, in pieces (see src/utils/uploads.py) ----
+
+def upload_error_response(error: uploads.UploadError):
+    return jsonify({'error': str(error), **error.details}), error.status
+
+
+@app.route('/api/uploads', methods=['GET'])
+def upload_settings():
+    """What the upload page needs to know: piece size, accepted types and free space."""
+    try:
+        return jsonify({
+            'success': True,
+            'chunk_size': uploads.CHUNK_SIZE,
+            'extensions': list(uploads.VIDEO_EXTENSIONS),
+            'free_bytes': max(0, uploads.free_space() - uploads.reserved_by_others() - uploads.SPACE_MARGIN),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/uploads', methods=['POST'])
+def start_upload():
+    """Begin uploading one video: {name, size}. Answers with the upload ID to send the pieces to."""
+    try:
+        data = request.get_json(silent=True) or {}
+        return jsonify({'success': True, **uploads.start(data.get('name'), data.get('size'))})
+    except uploads.UploadError as e:
+        return upload_error_response(e)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/uploads/<upload_id>', methods=['GET'])
+def upload_status(upload_id):
+    """How much of an upload has arrived, so the browser can carry on from there."""
+    try:
+        return jsonify({'success': True, **uploads.status(upload_id)})
+    except uploads.UploadError as e:
+        return upload_error_response(e)
+
+
+@app.route('/api/uploads/<upload_id>', methods=['PUT'])
+def upload_chunk(upload_id):
+    """Receive one piece of a video. ?offset= says where in the file it starts."""
+    try:
+        offset = request.args.get('offset', type=int)
+        return jsonify({'success': True, **uploads.receive_chunk(upload_id, offset, request.stream)})
+    except uploads.UploadError as e:
+        return upload_error_response(e)
+    except Exception as e:
+        return jsonify({'error': f'The piece did not arrive completely ({e}). It will be sent again.'}), 400
+
+
+@app.route('/api/uploads/<upload_id>/finish', methods=['POST'])
+def finish_upload(upload_id):
+    """All pieces have arrived: check the video and add it to the Videos library."""
+    try:
+        return jsonify({'success': True, **uploads.finish(upload_id)})
+    except uploads.UploadError as e:
+        return upload_error_response(e)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/uploads/<upload_id>', methods=['DELETE'])
+def cancel_upload(upload_id):
+    """Stop an upload and delete what had arrived."""
+    try:
+        uploads.discard(upload_id)
+        return jsonify({'success': True})
+    except uploads.UploadError as e:
+        return upload_error_response(e)
 
 
 @app.route('/api/generate-clip', methods=['POST'])

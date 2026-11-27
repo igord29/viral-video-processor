@@ -29,6 +29,7 @@
             window.fetch = async function (...args) {
                 const response = await originalFetch.apply(this, args);
                 if (response.status === 401 && new URL(response.url).origin === window.location.origin) {
+                    window.dispatchEvent(new Event('login-expired'));  // pages with unsaved work can let go
                     const here = window.location.pathname + window.location.search;
                     window.location.href = '{{ url_for("login") }}?next=' + encodeURIComponent(here);
                 }
